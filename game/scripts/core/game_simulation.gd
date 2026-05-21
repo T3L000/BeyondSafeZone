@@ -119,7 +119,9 @@ func new_game() -> Dictionary:
 			"scent": 2,
 			"light": 2,
 			"defense": 1,
-			"escape": 0
+			"escape": 0,
+			"supply_preservation": 0,
+			"facilities": _default_facilities()
 		},
 		"bike": {
 			"durability": 6,
@@ -166,6 +168,8 @@ func start_day(day: int) -> String:
 	state.day = day
 	if state.phase != "reveal":
 		state.phase = "morning"
+	if state.has("shelter") and state.shelter.has("facilities"):
+		_reset_facility_use()
 	var event := get_day_event(day)
 	state.morning_context = {
 		"day": day,
@@ -247,6 +251,48 @@ func explore(location_id: String) -> String:
 
 func perform_shelter_action(action_id: String) -> String:
 	match action_id:
+		"rest_bed":
+			state.lin.fatigue = max(0, int(state.lin.fatigue) - 2)
+			state.lin.stress = max(0, int(state.lin.stress) - 1)
+			_mark_facility_used("bed")
+			state.last_event = "林行在床铺上断续睡了一会儿，疲劳和压力都降下来一点。"
+		"workbench_repair":
+			if _spend("parts", 1):
+				state.bike.durability += 3
+				state.bike.range = min(3, int(state.bike.range) + 1)
+				state.bike.noise = max(0, int(state.bike.noise) - 1)
+				_mark_facility_used("workbench")
+				if int(state.bike.range) >= 3:
+					state.evacuation.bike_ready = true
+				state.last_event = "林行在工作台修好车链和刹车，自行车更适合远行。"
+			else:
+				state.last_event = "没有足够零件，工作台只能摆着拆开的工具。"
+		"barricade_windows":
+			if _spend("materials", 2):
+				state.shelter.door += 1
+				state.shelter.defense += 1
+				state.shelter.facilities.barricade.level += 1
+				_mark_facility_used("barricade")
+				state.last_event = "林行把窗框和门缝重新钉死，血月前的防线厚了一层。"
+			else:
+				state.last_event = "建材不足，封窗只能停在一半。"
+		"radio_broadcast":
+			if _spend("fuel", 1):
+				state.lin.hope += 1
+				state.shelter.noise += 1
+				_mark_facility_used("radio")
+				if int(state.day) >= 3:
+					state.evacuation.safezone_confirmed = true
+				if int(state.day) >= 9:
+					state.evacuation.address_known = true
+				state.last_event = _radio_message_for_day(int(state.day))
+			else:
+				state.last_event = "发电机没有燃料，收音机只剩沙沙声。"
+		"organize_storage":
+			state.shelter.supply_preservation = min(3, int(state.shelter.supply_preservation) + 1)
+			state.bike.capacity += 1
+			_mark_facility_used("storage")
+			state.last_event = "林行把食物、水和路上要带的东西重新打包，撤离时能少丢一些。"
 		"fortify":
 			if _spend("materials", 2):
 				state.shelter.door += 2
@@ -265,24 +311,9 @@ func perform_shelter_action(action_id: String) -> String:
 			else:
 				state.last_event = "缺少布料和胶带，气味遮蔽失败。"
 		"repair_bike":
-			if _spend("parts", 1):
-				state.bike.durability += 3
-				state.bike.range = min(3, int(state.bike.range) + 1)
-				if int(state.bike.range) >= 3:
-					state.evacuation.bike_ready = true
-				state.last_event = "自行车修好了些，明天能走更远。"
-			else:
-				state.last_event = "没有足够零件修车。"
+			return perform_shelter_action("workbench_repair")
 		"radio":
-			if _spend("fuel", 1):
-				state.lin.hope += 1
-				if int(state.day) >= 3:
-					state.evacuation.safezone_confirmed = true
-				if int(state.day) >= 9:
-					state.evacuation.address_known = true
-				state.last_event = _radio_message_for_day(int(state.day))
-			else:
-				state.last_event = "发电机没有燃料，收音机只剩沙沙声。"
+			return perform_shelter_action("radio_broadcast")
 		_:
 			state.last_event = "林行什么也没来得及做。"
 	state.phase = "night"
@@ -369,6 +400,31 @@ func _location(name: String, ring: String, range: int, zombies: int, resources: 
 		"resources": resources,
 		"visited": false
 	}
+
+func _default_facilities() -> Dictionary:
+	return {
+		"bed": _facility("床铺", "recover"),
+		"workbench": _facility("工作台", "craft_repair"),
+		"barricade": _facility("封窗", "blood_moon_defense"),
+		"radio": _facility("收音机", "broadcast_clues"),
+		"storage": _facility("储物/整理台", "preserve_carry")
+	}
+
+func _facility(name: String, role: String) -> Dictionary:
+	return {
+		"name": name,
+		"role": role,
+		"level": 1,
+		"used_today": false
+	}
+
+func _mark_facility_used(facility_id: String) -> void:
+	if state.shelter.facilities.has(facility_id):
+		state.shelter.facilities[facility_id].used_today = true
+
+func _reset_facility_use() -> void:
+	for facility_id in state.shelter.facilities.keys():
+		state.shelter.facilities[facility_id].used_today = false
 
 func _day_event(day: int, morning_text: String, pressure_type: String, clue: String, blood_moon_warning: String, modifiers: Dictionary) -> Dictionary:
 	return {
@@ -470,13 +526,16 @@ func _determine_ending_state() -> String:
 	return "barely_reached_gate"
 
 func _ending_summary(ending_state: String) -> String:
+	var supply_phrase := ""
+	if int(state.shelter.get("supply_preservation", 0)) > 0:
+		supply_phrase = "他带着整理好的物资抵达筛查棚，"
 	match ending_state:
 		"collapsed":
 			return "林行没能稳定抵达保护区，只在崩溃边缘听见尸群路线异常的传闻。祁眠日志揭示：尸群中藏着那个改变路线的人。"
 		"barely_reached_gate":
-			return "林行勉强抵达保护区大门外，通过初筛后被要求隔离观察。筛查棚外有人低声说，昨晚那股尸群像被人牵走了。"
+			return "林行勉强抵达保护区大门外，%s通过初筛后被要求隔离观察。筛查棚外有人低声说，昨晚那股尸群像被人牵走了。" % supply_phrase
 		_:
-			return "林行抵达保护区大门外，通过初筛后被要求隔离观察。玩家随后看到祁眠藏在尸群中改变路线的完整日志：这并非为了林行，却间接救下了他。"
+			return "林行抵达保护区大门外，%s通过初筛后被要求隔离观察。玩家随后看到祁眠藏在尸群中改变路线的完整日志：这并非为了林行，却间接救下了他。" % supply_phrase
 
 func _qimian_blood_moon_support(day: int) -> int:
 	var support := 0

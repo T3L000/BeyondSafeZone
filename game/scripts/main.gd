@@ -119,15 +119,17 @@ func _refresh() -> void:
 		state.resources.parts,
 		state.resources.fuel
 	]
-	shelter_label.text = "据点：门窗 %d  噪音 %d  气味 %d  光源 %d  防御 %d\n自行车：耐久 %d  范围 %d  载重 %d" % [
+	shelter_label.text = "据点：门窗 %d  噪音 %d  气味 %d  光源 %d  防御 %d  整理 %d\n自行车：耐久 %d  范围 %d  载重 %d\n设施：%s" % [
 		state.shelter.door,
 		state.shelter.noise,
 		state.shelter.scent,
 		state.shelter.light,
 		state.shelter.defense,
+		state.shelter.supply_preservation,
 		state.bike.durability,
 		state.bike.range,
-		state.bike.capacity
+		state.bike.capacity,
+		_facility_summary(state.shelter.facilities)
 	]
 	_rebuild_location_buttons()
 	_rebuild_action_buttons()
@@ -160,11 +162,13 @@ func _rebuild_action_buttons() -> void:
 	for child in action_box.get_children():
 		child.queue_free()
 	var actions := {
-		"fortify": "加固门窗（建材-2）",
+		"rest_bed": "床铺：休息降疲劳/压力",
+		"workbench_repair": "工作台：修车（零件-1）",
+		"barricade_windows": "封窗：加固防线（建材-2）",
+		"radio_broadcast": "收音机：听广播（燃料-1）",
+		"organize_storage": "整理台：打包物资",
 		"quiet": "降低噪音",
-		"mask_scent": "遮蔽气味（建材-1）",
-		"repair_bike": "修理自行车（零件-1）",
-		"radio": "听收音机（燃料-1）"
+		"mask_scent": "遮蔽气味（建材-1）"
 	}
 	for action_id in actions.keys():
 		var button := Button.new()
@@ -298,3 +302,11 @@ func _ending_label(ending_state: String) -> String:
 
 func _flag_label(value: bool) -> String:
 	return "已确认" if value else "未确认"
+
+func _facility_summary(facilities: Dictionary) -> String:
+	var labels := []
+	for facility_id in ["bed", "workbench", "barricade", "radio", "storage"]:
+		var facility: Dictionary = facilities[facility_id]
+		var used_label := "*" if bool(facility.used_today) else ""
+		labels.append("%s%d%s" % [facility.name, int(facility.level), used_label])
+	return "  ".join(labels)

@@ -7,11 +7,14 @@ var failures: Array[String] = []
 func _initialize() -> void:
 	_test_initial_goal_and_stats()
 	_test_resources_and_evacuation_flags_match_latest_scope()
+	_test_shelter_facilities_exist_with_core_roles()
 	_test_day_event_table_and_morning_context()
 	_test_blood_moon_days()
 	_test_blood_moon_warnings_are_visible_before_night()
 	_test_morning_pressure_applies_once()
 	_test_exploration_marks_location_and_reports_risk()
+	_test_facility_actions_drive_recovery_and_evacuation_readiness()
+	_test_storage_table_preserves_supplies_for_escape()
 	_test_qimian_wakes_on_day_five_and_uses_default_card()
 	_test_demo_reveal_contains_hidden_causality()
 	_test_day_fourteen_assigns_ending_state()
@@ -43,6 +46,20 @@ func _test_resources_and_evacuation_flags_match_latest_scope() -> void:
 	_expect_equal(state.evacuation.safezone_confirmed, false, "safe zone starts unconfirmed")
 	_expect_equal(state.evacuation.address_known, false, "safe zone address starts unknown")
 	_expect_equal(state.evacuation.bike_ready, false, "bike starts not ready for the gate run")
+
+func _test_shelter_facilities_exist_with_core_roles() -> void:
+	var sim = Simulation.new()
+	var state = sim.new_game()
+	_expect_true(state.shelter.facilities.has("bed"), "bed facility exists")
+	_expect_true(state.shelter.facilities.has("workbench"), "workbench facility exists")
+	_expect_true(state.shelter.facilities.has("barricade"), "window barricade facility exists")
+	_expect_true(state.shelter.facilities.has("radio"), "radio facility exists")
+	_expect_true(state.shelter.facilities.has("storage"), "storage table facility exists")
+	_expect_equal(state.shelter.facilities.bed.role, "recover", "bed recovers fatigue and stress")
+	_expect_equal(state.shelter.facilities.workbench.role, "craft_repair", "workbench handles bike and tools")
+	_expect_equal(state.shelter.facilities.barricade.role, "blood_moon_defense", "barricade handles blood moon defense")
+	_expect_equal(state.shelter.facilities.radio.role, "broadcast_clues", "radio handles broadcast clues")
+	_expect_equal(state.shelter.facilities.storage.role, "preserve_carry", "storage preserves supplies")
 
 func _test_day_event_table_and_morning_context() -> void:
 	var sim = Simulation.new()
@@ -90,6 +107,54 @@ func _test_exploration_marks_location_and_reports_risk() -> void:
 	_expect_equal(sim.state.phase, "evening", "exploring advances to evening")
 	_expect_true(result.find("风险") >= 0, "exploration reports deterministic risk text")
 	_expect_true(label_after.find("已搜") >= 0, "visited locations are labelled")
+
+func _test_facility_actions_drive_recovery_and_evacuation_readiness() -> void:
+	var sim = Simulation.new()
+	sim.new_game()
+	sim.state.phase = "evening"
+	sim.state.lin.fatigue = 5
+	sim.state.lin.stress = 5
+	sim.perform_shelter_action("rest_bed")
+	_expect_true(sim.state.lin.fatigue < 5, "bed reduces fatigue")
+	_expect_true(sim.state.lin.stress < 5, "bed reduces stress")
+	_expect_equal(sim.state.shelter.facilities.bed.used_today, true, "bed records daily use")
+
+	sim.state.phase = "evening"
+	var starting_parts: int = sim.state.resources.parts
+	sim.perform_shelter_action("workbench_repair")
+	_expect_true(sim.state.resources.parts < starting_parts, "workbench repair spends parts")
+	_expect_true(sim.state.bike.range >= 2, "workbench repair improves bike range")
+
+	sim.state.phase = "evening"
+	sim.state.resources.materials = 4
+	var starting_defense: int = sim.state.shelter.defense
+	sim.perform_shelter_action("barricade_windows")
+	_expect_true(sim.state.shelter.defense > starting_defense, "barricade improves defense")
+	_expect_true(sim.state.shelter.facilities.barricade.level >= 2, "barricade facility level improves")
+
+	sim.state.phase = "evening"
+	sim.state.day = 9
+	sim.state.resources.fuel = 2
+	sim.perform_shelter_action("radio_broadcast")
+	_expect_equal(sim.state.evacuation.safezone_confirmed, true, "radio confirms safe zone")
+	_expect_equal(sim.state.evacuation.address_known, true, "radio can reveal screening gate address")
+
+func _test_storage_table_preserves_supplies_for_escape() -> void:
+	var sim = Simulation.new()
+	sim.new_game()
+	sim.state.phase = "evening"
+	sim.state.resources.materials = 3
+	sim.perform_shelter_action("organize_storage")
+	_expect_equal(sim.state.shelter.facilities.storage.used_today, true, "storage table records daily use")
+	_expect_equal(sim.state.shelter.supply_preservation, 1, "storage improves supply preservation")
+	sim.state.day = 14
+	sim.state.resources.food = 1
+	sim.state.resources.water = 1
+	sim.state.evacuation.safezone_confirmed = true
+	sim.state.evacuation.address_known = true
+	sim.state.evacuation.bike_ready = true
+	sim.sleep_and_resolve_night()
+	_expect_true(sim.state.reveal.summary.find("带着整理好的物资") >= 0, "ending mentions organized supplies")
 
 func _test_qimian_wakes_on_day_five_and_uses_default_card() -> void:
 	var sim = Simulation.new()
