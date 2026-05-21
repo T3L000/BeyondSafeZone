@@ -67,7 +67,7 @@ func _build_ui() -> void:
 	columns.add_child(middle)
 
 	var location_title := Label.new()
-	location_title.text = "白天探索"
+	location_title.text = "节点式大地图 / 白天探索"
 	location_title.add_theme_font_size_override("font_size", 20)
 	middle.add_child(location_title)
 
@@ -147,8 +147,8 @@ func _rebuild_location_buttons() -> void:
 		elif sim.state.phase not in ["morning", "day"]:
 			disabled_reason = "只能白天探索"
 		elif int(location.range) > int(sim.state.bike.range):
-			disabled_reason = "自行车范围不足"
-		button.text = "%s\n%s" % [sim.get_location_label(location_id), sim.get_location_risk_text(location_id)]
+			disabled_reason = "太远：自行车范围 %d/%d" % [int(sim.state.bike.range), int(location.range)]
+		button.text = sim.get_location_card_text(location_id)
 		if disabled_reason != "":
 			button.text = "%s\n（%s）" % [button.text, disabled_reason]
 		button.disabled = disabled_reason != ""

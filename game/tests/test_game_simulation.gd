@@ -13,6 +13,11 @@ func _initialize() -> void:
 	_test_blood_moon_warnings_are_visible_before_night()
 	_test_morning_pressure_applies_once()
 	_test_exploration_marks_location_and_reports_risk()
+	_test_locations_expose_node_map_metadata()
+	_test_location_card_text_surfaces_node_map_metadata()
+	_test_exploration_can_reveal_evacuation_address_from_map_nodes()
+	_test_bad_road_conditions_increase_fatigue_deterministically()
+	_test_qimian_actions_mark_affected_map_nodes()
 	_test_facility_actions_drive_recovery_and_evacuation_readiness()
 	_test_storage_table_preserves_supplies_for_escape()
 	_test_qimian_wakes_on_day_five_and_uses_default_card()
@@ -107,6 +112,60 @@ func _test_exploration_marks_location_and_reports_risk() -> void:
 	_expect_equal(sim.state.phase, "evening", "exploring advances to evening")
 	_expect_true(result.find("风险") >= 0, "exploration reports deterministic risk text")
 	_expect_true(label_after.find("已搜") >= 0, "visited locations are labelled")
+
+func _test_locations_expose_node_map_metadata() -> void:
+	var sim = Simulation.new()
+	sim.new_game()
+	for location_id in sim.get_location_ids():
+		var location: Dictionary = sim.state.locations[location_id]
+		_expect_true(location.has("resource_tendency"), "%s has resource tendency metadata" % location_id)
+		_expect_true(location.has("danger_level"), "%s has danger level metadata" % location_id)
+		_expect_true(location.has("route_time"), "%s has route time metadata" % location_id)
+		_expect_true(location.has("road_condition"), "%s has road condition metadata" % location_id)
+		_expect_true(location.has("icons"), "%s has map icon metadata" % location_id)
+		_expect_true(str(location.get("resource_tendency", "")).length() > 0, "%s resource tendency is readable" % location_id)
+		_expect_true(str(location.get("danger_level", "")).length() > 0, "%s danger level is readable" % location_id)
+		_expect_true(int(location.get("route_time", 0)) > 0, "%s route time is positive" % location_id)
+		_expect_true(str(location.get("road_condition", "")).length() > 0, "%s road condition is readable" % location_id)
+		_expect_true(location.get("icons", []).size() > 0, "%s exposes at least one map icon" % location_id)
+
+func _test_location_card_text_surfaces_node_map_metadata() -> void:
+	var sim = Simulation.new()
+	sim.new_game()
+	var card_text: String = sim.get_location_card_text("police")
+	_expect_true(card_text.find("资源") >= 0, "location card shows resource tendency")
+	_expect_true(card_text.find("危险") >= 0, "location card shows danger level")
+	_expect_true(card_text.find("路况") >= 0, "location card shows road condition")
+	_expect_true(card_text.find("路程") >= 0, "location card shows route time")
+	_expect_true(card_text.find("图标") >= 0, "location card shows map icons")
+	_expect_true(card_text.find("燃料/地图线索") >= 0, "police card shows its resource tendency")
+	_expect_true(card_text.find("路障") >= 0, "police card shows blocked road condition")
+
+func _test_exploration_can_reveal_evacuation_address_from_map_nodes() -> void:
+	var sim = Simulation.new()
+	sim.new_game()
+	sim.state.bike.range = 2
+	_expect_equal(sim.state.evacuation.address_known, false, "safe-zone address starts unknown")
+	var result: String = sim.explore("police")
+	_expect_equal(sim.state.evacuation.address_known, true, "police map node can reveal the safe-zone address")
+	_expect_true(result.find("地址") >= 0, "exploration result calls out the address clue")
+
+func _test_bad_road_conditions_increase_fatigue_deterministically() -> void:
+	var sim = Simulation.new()
+	sim.new_game()
+	sim.state.bike.range = 2
+	var starting_fatigue: int = sim.state.lin.fatigue
+	var result: String = sim.explore("bike_shop")
+	_expect_true(sim.state.lin.fatigue >= starting_fatigue + 2, "blocked road adds deterministic fatigue beyond route distance")
+	_expect_true(result.find("路况") >= 0, "exploration result reports road-condition pressure")
+
+func _test_qimian_actions_mark_affected_map_nodes() -> void:
+	var sim = Simulation.new()
+	sim.new_game()
+	sim.resolve_qimian_for_day(6)
+	_expect_equal(sim.state.locations.clinic.qimian_trace, true, "Qimian's clinic action marks the clinic node")
+	_expect_true(sim.state.locations.clinic.icons.has("qimian"), "Qimian trace adds a map icon")
+	_expect_true(sim.get_location_card_text("clinic").find("祁眠异常") >= 0, "location card surfaces Qimian trace")
 
 func _test_facility_actions_drive_recovery_and_evacuation_readiness() -> void:
 	var sim = Simulation.new()

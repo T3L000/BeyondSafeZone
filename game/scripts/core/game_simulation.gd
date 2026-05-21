@@ -192,14 +192,30 @@ func get_location_label(location_id: String) -> String:
 	var visit_label := "已搜" if bool(location.visited) else "未搜"
 	var stock_label := "已空" if _is_location_depleted(location) else "有物资"
 	var range_label := "可达" if int(location.range) <= int(state.bike.range) else "太远"
-	return "%s / %s / 尸群%s / %s / %s / %s" % [
+	return "%s / %s / 尸群%s / 危险%s / %s / %s / %s" % [
 		location.name,
 		location.ring,
 		str(location.zombies),
+		str(location.danger_level),
 		visit_label,
 		stock_label,
 		range_label
 	]
+
+func get_location_card_text(location_id: String) -> String:
+	if not state.locations.has(location_id):
+		return "未知节点"
+	var location: Dictionary = state.locations[location_id]
+	var icon_text := ", ".join(location.icons)
+	return "%s\n资源：%s / 危险：%s / 路程：%d / 路况：%s\n图标：%s\n%s" % [
+		get_location_label(location_id),
+		str(location.resource_tendency),
+		str(location.danger_level),
+		int(location.route_time),
+		str(location.road_condition),
+		icon_text,
+		get_location_risk_text(location_id)
+	] + _location_trace_suffix(location)
 
 func get_location_risk_text(location_id: String) -> String:
 	if not state.locations.has(location_id):
@@ -237,16 +253,24 @@ func explore(location_id: String) -> String:
 
 	location.visited = true
 	var risk_text := get_location_risk_text(location_id)
+	var road_penalty := _road_condition_fatigue_penalty(location)
+	var pressure_notes := []
+	if road_penalty > 0:
+		pressure_notes.append("路况：%s，额外疲劳 +%d。" % [str(location.road_condition), road_penalty])
+	pressure_notes.append_array(_apply_evacuation_clues(location_id, location))
 	_apply_exploration_risk(location)
 	state.bike.durability = max(0, int(state.bike.durability) - location.range)
-	state.lin.fatigue += location.range
+	state.lin.fatigue += int(location.route_time) + road_penalty
 	state.lin.stress += max(0, int(location.zombies) - 2)
 	state.phase = "evening"
+	var pressure_note := ""
+	if not pressure_notes.is_empty():
+		pressure_note = " %s" % " ".join(pressure_notes)
 
 	if found.is_empty():
-		state.last_event = "探索 %s。%s 这里几乎被搜空了，只留下难以解释的翻动痕迹。" % [location.name, risk_text]
+		state.last_event = "探索 %s。%s%s 这里几乎被搜空了，只留下难以解释的翻动痕迹。" % [location.name, risk_text, pressure_note]
 	else:
-		state.last_event = "探索 %s。%s 带回：%s。" % [location.name, risk_text, ", ".join(found)]
+		state.last_event = "探索 %s。%s%s 带回：%s。" % [location.name, risk_text, pressure_note, ", ".join(found)]
 	return state.last_event
 
 func perform_shelter_action(action_id: String) -> String:
@@ -380,24 +404,30 @@ func resolve_qimian_for_day(day: int) -> void:
 
 func _default_locations() -> Dictionary:
 	return {
-		"home": _location("林行家", "近圈", 1, 1, {"food": 1, "water": 2, "materials": 1}),
-		"convenience": _location("小区便利店", "近圈", 1, 3, {"food": 4, "water": 4, "fuel": 1}),
-		"clinic": _location("社区诊所", "近圈", 1, 2, {"meds": 2, "materials": 1}),
-		"bike_shop": _location("自行车修理铺", "近圈", 1, 2, {"parts": 3, "materials": 2}),
-		"supermarket": _location("超市", "中圈", 2, 4, {"food": 8, "water": 4, "materials": 2}),
-		"school": _location("废弃学校", "中圈", 2, 3, {"materials": 4, "fuel": 1}),
-		"police": _location("派出所", "中圈", 2, 5, {"fuel": 2, "materials": 1}),
-		"subway": _location("地铁口", "中圈", 2, 5, {"materials": 2, "fuel": 1}),
-		"safezone_edge": _location("保护区外围", "远圈", 3, 6, {"materials": 1})
+		"home": _location("林行家", "近圈", 1, 1, {"food": 1, "water": 2, "materials": 1}, "少量补给", "低", 1, "熟路", ["home"]),
+		"convenience": _location("小区便利店", "近圈", 1, 3, {"food": 4, "water": 4, "fuel": 1}, "食物/水", "中", 1, "碎玻璃", ["food", "water"]),
+		"clinic": _location("社区诊所", "近圈", 1, 2, {"meds": 2, "materials": 1}, "药品", "中", 1, "雨后湿滑", ["meds", "question"]),
+		"bike_shop": _location("自行车修理铺", "近圈", 1, 2, {"parts": 3, "materials": 2}, "零件/建材", "中", 1, "堵塞", ["parts", "bike"]),
+		"supermarket": _location("超市", "中圈", 2, 4, {"food": 8, "water": 4, "materials": 2}, "大量食物", "高", 2, "尸群迁移", ["food", "danger"]),
+		"school": _location("废弃学校", "中圈", 2, 3, {"materials": 4, "fuel": 1}, "建材/燃料", "中", 2, "积水", ["materials"]),
+		"police": _location("派出所", "中圈", 2, 5, {"fuel": 2, "materials": 1}, "燃料/地图线索", "高", 2, "路障", ["fuel", "clue"]),
+		"subway": _location("地铁口", "中圈", 2, 5, {"materials": 2, "fuel": 1}, "路线线索", "高", 2, "尸群迁移", ["route", "question"]),
+		"safezone_edge": _location("保护区外围", "远圈", 3, 6, {"materials": 1}, "保护区线索", "极高", 3, "封锁线", ["safezone", "danger"])
 	}
 
-func _location(name: String, ring: String, range: int, zombies: int, resources: Dictionary) -> Dictionary:
+func _location(name: String, ring: String, range: int, zombies: int, resources: Dictionary, resource_tendency: String, danger_level: String, route_time: int, road_condition: String, icons: Array) -> Dictionary:
 	return {
 		"name": name,
 		"ring": ring,
 		"range": range,
 		"zombies": zombies,
 		"resources": resources,
+		"resource_tendency": resource_tendency,
+		"danger_level": danger_level,
+		"route_time": route_time,
+		"road_condition": road_condition,
+		"icons": icons,
+		"qimian_trace": false,
 		"visited": false
 	}
 
@@ -472,9 +502,35 @@ func _apply_exploration_risk(location: Dictionary) -> void:
 	elif pressure >= 5:
 		state.lin.stress += 1
 
+func _road_condition_fatigue_penalty(location: Dictionary) -> int:
+	match str(location.road_condition):
+		"熟路", "碎玻璃":
+			return 0
+		"雨后湿滑", "积水", "堵塞", "路障":
+			return 1
+		"尸群迁移", "封锁线":
+			return 2
+		_:
+			return 1
+
+func _apply_evacuation_clues(location_id: String, location: Dictionary) -> Array:
+	var notes := []
+	if location_id in ["police", "subway", "safezone_edge"] or location.icons.has("clue") or location.icons.has("route") or location.icons.has("safezone"):
+		if not bool(state.evacuation.address_known):
+			state.evacuation.address_known = true
+			notes.append("撤离线索：找到保护区筛查棚地址。")
+	if location_id == "safezone_edge" or location.icons.has("safezone"):
+		if not bool(state.evacuation.safezone_confirmed):
+			state.evacuation.safezone_confirmed = true
+			notes.append("撤离线索：确认保护区仍在短暂接收。")
+	return notes
+
 func _apply_qimian_action(day: int, action: Dictionary) -> void:
 	if action.has("location"):
 		var location: Dictionary = state.locations[action.location]
+		location.qimian_trace = true
+		if not location.icons.has("qimian"):
+			location.icons.append("qimian")
 		if action.has("resource"):
 			var resource_name: String = action.resource
 			location.resources[resource_name] = max(0, int(location.resources.get(resource_name, 0)) + int(action.amount))
@@ -492,6 +548,11 @@ func _apply_qimian_action(day: int, action: Dictionary) -> void:
 		"ai_replay": str(action.get("ai_replay", "")),
 		"subjective_fragment": str(action.get("subjective_fragment", ""))
 	})
+
+func _location_trace_suffix(location: Dictionary) -> String:
+	if bool(location.get("qimian_trace", false)):
+		return "\n祁眠异常：此处留下了非普通幸存者造成的痕迹。"
+	return ""
 
 func _resolve_blood_moon(day: int) -> String:
 	var support := _qimian_blood_moon_support(day)
