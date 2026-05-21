@@ -101,21 +101,23 @@ func _refresh() -> void:
 		state.last_event
 	]
 	day_context_label.text = _build_day_context_text(state)
-	stats_label.text = "陈醒：生命 %d  疲劳 %d  压力 %d  感染风险 %d  希望 %d" % [
-		state.chen.health,
-		state.chen.fatigue,
-		state.chen.stress,
-		state.chen.infection_risk,
-		state.chen.hope
+	stats_label.text = "林行：生命 %d  疲劳 %d  压力 %d  感染风险 %d  希望 %d\n撤离：广播 %s  地址 %s  自行车 %s" % [
+		state.lin.health,
+		state.lin.fatigue,
+		state.lin.stress,
+		state.lin.infection_risk,
+		state.lin.hope,
+		_flag_label(state.evacuation.safezone_confirmed),
+		_flag_label(state.evacuation.address_known),
+		_flag_label(state.evacuation.bike_ready)
 	]
-	resources_label.text = "资源：食物 %d  水 %d  药 %d  建材 %d  零件 %d  电池 %d  情报 %d" % [
+	resources_label.text = "资源：食物 %d  水 %d  药 %d  建材 %d  零件 %d  燃料 %d" % [
 		state.resources.food,
 		state.resources.water,
 		state.resources.meds,
 		state.resources.materials,
 		state.resources.parts,
-		state.resources.batteries,
-		state.resources.intel
+		state.resources.fuel
 	]
 	shelter_label.text = "据点：门窗 %d  噪音 %d  气味 %d  光源 %d  防御 %d\n自行车：耐久 %d  范围 %d  载重 %d" % [
 		state.shelter.door,
@@ -162,7 +164,7 @@ func _rebuild_action_buttons() -> void:
 		"quiet": "降低噪音",
 		"mask_scent": "遮蔽气味（建材-1）",
 		"repair_bike": "修理自行车（零件-1）",
-		"radio": "听收音机（电池-1）"
+		"radio": "听收音机（燃料-1）"
 	}
 	for action_id in actions.keys():
 		var button := Button.new()
@@ -285,11 +287,14 @@ func _pressure_label(pressure_type: String) -> String:
 
 func _ending_label(ending_state: String) -> String:
 	match ending_state:
-		"survived_demo":
-			return "稳稳撑过 Demo"
-		"barely_survived":
-			return "勉强撑过 Demo"
+		"reached_gate_quarantine":
+			return "抵达保护区门口，隔离观察"
+		"barely_reached_gate":
+			return "勉强抵达保护区门口"
 		"collapsed":
 			return "崩溃边缘"
 		_:
 			return "进行中"
+
+func _flag_label(value: bool) -> String:
+	return "已确认" if value else "未确认"
