@@ -153,7 +153,7 @@ func _rebuild_location_buttons() -> void:
 			button.text = "%s\n（%s）" % [button.text, disabled_reason]
 		button.disabled = disabled_reason != ""
 		button.pressed.connect(func() -> void:
-			sim.explore(location_id)
+			sim.enter_location(location_id)
 			_refresh()
 		)
 		location_box.add_child(button)
@@ -161,6 +161,9 @@ func _rebuild_location_buttons() -> void:
 func _rebuild_action_buttons() -> void:
 	for child in action_box.get_children():
 		child.queue_free()
+	if sim.state.phase == "searching":
+		_rebuild_room_search_buttons()
+		return
 	var actions := {
 		"rest_bed": "床铺：休息降疲劳/压力",
 		"workbench_repair": "工作台：修车（零件-1）",
@@ -211,6 +214,51 @@ func _rebuild_action_buttons() -> void:
 	)
 	action_box.add_child(restart_button)
 
+func _rebuild_room_search_buttons() -> void:
+	var location_id := str(sim.state.exploration.active_location)
+	var location: Dictionary = sim.state.locations[location_id]
+	var header := Label.new()
+	header.text = "室内搜索：%s  时间 %d/%d  噪音 %d" % [
+		location.name,
+		int(sim.state.exploration.time_used),
+		int(sim.state.exploration.time_limit),
+		int(sim.state.exploration.noise)
+	]
+	header.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	action_box.add_child(header)
+
+	for room_id in location.rooms.keys():
+		var room_label := Label.new()
+		room_label.text = sim.get_room_card_text(room_id)
+		room_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		action_box.add_child(room_label)
+
+		var search_button := Button.new()
+		search_button.text = "谨慎搜索：%s" % location.rooms[room_id].name
+		search_button.disabled = bool(location.rooms[room_id].searched)
+		search_button.pressed.connect(func() -> void:
+			sim.search_room(room_id, "careful")
+			_refresh()
+		)
+		action_box.add_child(search_button)
+
+		var lure_button := Button.new()
+		lure_button.text = "制造噪音：%s" % location.rooms[room_id].name
+		lure_button.disabled = bool(location.rooms[room_id].searched)
+		lure_button.pressed.connect(func() -> void:
+			sim.lure_room(room_id)
+			_refresh()
+		)
+		action_box.add_child(lure_button)
+
+	var leave_button := Button.new()
+	leave_button.text = "离开地点，回到据点"
+	leave_button.pressed.connect(func() -> void:
+		sim.leave_exploration()
+		_refresh()
+	)
+	action_box.add_child(leave_button)
+
 func _refresh_log() -> void:
 	var lines := []
 	lines.append("[b]普通事件[/b]")
@@ -259,6 +307,8 @@ func _phase_label(phase: String) -> String:
 			return "黄昏"
 		"night":
 			return "夜晚"
+		"searching":
+			return "室内搜索"
 		"reveal":
 			return "日志揭示"
 		_:

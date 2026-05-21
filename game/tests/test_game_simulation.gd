@@ -18,6 +18,12 @@ func _initialize() -> void:
 	_test_exploration_can_reveal_evacuation_address_from_map_nodes()
 	_test_bad_road_conditions_increase_fatigue_deterministically()
 	_test_qimian_actions_mark_affected_map_nodes()
+	_test_locations_expose_indoor_search_rooms()
+	_test_enter_location_starts_indoor_search_phase()
+	_test_search_room_collects_resources_and_leave_advances_to_evening()
+	_test_dark_hidden_zombie_room_causes_deterministic_injury()
+	_test_noise_lure_reduces_hidden_zombie_injury_but_spends_time()
+	_test_overstaying_indoor_search_adds_fatigue_on_leave()
 	_test_facility_actions_drive_recovery_and_evacuation_readiness()
 	_test_storage_table_preserves_supplies_for_escape()
 	_test_qimian_wakes_on_day_five_and_uses_default_card()
@@ -166,6 +172,82 @@ func _test_qimian_actions_mark_affected_map_nodes() -> void:
 	_expect_equal(sim.state.locations.clinic.qimian_trace, true, "Qimian's clinic action marks the clinic node")
 	_expect_true(sim.state.locations.clinic.icons.has("qimian"), "Qimian trace adds a map icon")
 	_expect_true(sim.get_location_card_text("clinic").find("祁眠异常") >= 0, "location card surfaces Qimian trace")
+
+func _test_locations_expose_indoor_search_rooms() -> void:
+	var sim = Simulation.new()
+	sim.new_game()
+	for location_id in ["convenience", "clinic", "supermarket"]:
+		var location: Dictionary = sim.state.locations[location_id]
+		_expect_true(location.has("rooms"), "%s exposes indoor search rooms" % location_id)
+		_expect_true(location.rooms.size() >= 2, "%s has at least two room choices" % location_id)
+		for room_id in location.rooms.keys():
+			var room: Dictionary = location.rooms[room_id]
+			_expect_true(room.has("name"), "%s/%s has a readable name" % [location_id, room_id])
+			_expect_true(room.has("visibility"), "%s/%s has visibility metadata" % [location_id, room_id])
+			_expect_true(room.has("search_time"), "%s/%s has deterministic search time" % [location_id, room_id])
+			_expect_true(room.has("resources"), "%s/%s has deterministic room resources" % [location_id, room_id])
+
+func _test_enter_location_starts_indoor_search_phase() -> void:
+	var sim = Simulation.new()
+	sim.new_game()
+	var result: String = sim.enter_location("convenience")
+	_expect_equal(sim.state.phase, "searching", "entering a location starts indoor searching")
+	_expect_equal(sim.state.exploration.active_location, "convenience", "active exploration records the selected node")
+	_expect_true(sim.state.exploration.time_limit > 0, "indoor search has a time limit")
+	_expect_true(result.find("进入") >= 0, "enter location reports entry text")
+	_expect_true(sim.get_room_card_text("front_store").find("能见度") >= 0, "room card surfaces visibility")
+
+func _test_search_room_collects_resources_and_leave_advances_to_evening() -> void:
+	var sim = Simulation.new()
+	sim.new_game()
+	sim.enter_location("convenience")
+	var starting_food: int = sim.state.resources.food
+	var result: String = sim.search_room("front_store", "careful")
+	_expect_true(sim.state.resources.food > starting_food, "searching a stocked room collects deterministic resources")
+	_expect_equal(sim.state.locations.convenience.rooms.front_store.searched, true, "searched room is marked")
+	_expect_true(result.find("带回") >= 0, "room search reports resource pickup")
+	sim.leave_exploration()
+	_expect_equal(sim.state.phase, "evening", "leaving indoor search advances to evening")
+	_expect_equal(sim.state.locations.convenience.visited, true, "leaving marks the location visited")
+	_expect_equal(sim.state.exploration.active_location, "", "leaving clears active exploration")
+
+func _test_dark_hidden_zombie_room_causes_deterministic_injury() -> void:
+	var sim = Simulation.new()
+	sim.new_game()
+	sim.enter_location("clinic")
+	var starting_health: int = sim.state.lin.health
+	var starting_infection: int = sim.state.lin.infection_risk
+	var result: String = sim.search_room("pharmacy", "quick")
+	_expect_true(sim.state.lin.health < starting_health, "rushing a dark hidden-zombie room hurts Lin Xing")
+	_expect_true(sim.state.lin.infection_risk > starting_infection, "hidden-zombie contact raises infection risk")
+	_expect_true(result.find("隐藏尸群") >= 0, "search result reports hidden-zombie contact")
+
+func _test_noise_lure_reduces_hidden_zombie_injury_but_spends_time() -> void:
+	var sim = Simulation.new()
+	sim.new_game()
+	sim.enter_location("clinic")
+	var starting_health: int = sim.state.lin.health
+	var lure_result: String = sim.lure_room("pharmacy")
+	var search_result: String = sim.search_room("pharmacy", "careful")
+	_expect_equal(sim.state.lin.health, starting_health, "luring before search avoids direct injury")
+	_expect_true(sim.state.exploration.time_used >= 2, "luring and searching spend time")
+	_expect_true(sim.state.exploration.noise > 0, "luring raises local noise")
+	_expect_true(lure_result.find("制造噪音") >= 0, "lure action reports noise")
+	_expect_true(search_result.find("已被引开") >= 0, "search reports the threat was lured")
+
+func _test_overstaying_indoor_search_adds_fatigue_on_leave() -> void:
+	var sim = Simulation.new()
+	sim.new_game()
+	sim.state.bike.range = 2
+	sim.enter_location("supermarket")
+	var starting_fatigue: int = sim.state.lin.fatigue
+	sim.search_room("front_store", "careful")
+	sim.lure_room("back_room")
+	sim.search_room("back_room", "careful")
+	sim.lure_room("front_store")
+	var result: String = sim.leave_exploration()
+	_expect_true(sim.state.lin.fatigue > starting_fatigue, "overstaying indoor search adds fatigue")
+	_expect_true(result.find("天色") >= 0, "leaving after overstaying reports time pressure")
 
 func _test_facility_actions_drive_recovery_and_evacuation_readiness() -> void:
 	var sim = Simulation.new()

@@ -147,6 +147,7 @@ func new_game() -> Dictionary:
 			"address_known": false,
 			"bike_ready": false
 		},
+		"exploration": _empty_exploration_state(),
 		"blood_moons_resolved": [],
 		"reveal": {
 			"unlocked": false,
@@ -217,6 +218,23 @@ func get_location_card_text(location_id: String) -> String:
 		get_location_risk_text(location_id)
 	] + _location_trace_suffix(location)
 
+func get_room_card_text(room_id: String) -> String:
+	if state.phase != "searching" or str(state.exploration.active_location) == "":
+		return "没有进入可搜索地点。"
+	var location: Dictionary = state.locations[state.exploration.active_location]
+	if not location.rooms.has(room_id):
+		return "未知房间。"
+	var room: Dictionary = location.rooms[room_id]
+	var searched_label := "已搜" if bool(room.searched) else "未搜"
+	var zombie_hint := "可能有动静" if int(room.hidden_zombies) > 0 else "暂时安静"
+	return "%s / 能见度：%s / 耗时：%d / %s / %s" % [
+		room.name,
+		room.visibility,
+		int(room.search_time),
+		zombie_hint,
+		searched_label
+	]
+
 func get_location_risk_text(location_id: String) -> String:
 	if not state.locations.has(location_id):
 		return "风险：未知。"
@@ -229,6 +247,95 @@ func get_location_risk_text(location_id: String) -> String:
 	if pressure <= 7:
 		return "风险：中，可能增加疲劳和压力。"
 	return "风险：高，尸群密集，可能受伤。"
+
+func enter_location(location_id: String) -> String:
+	if state.demo_complete:
+		return "Demo 已结束，祁眠日志已解锁。"
+	if state.phase not in ["morning", "day"]:
+		return "现在不是白天，不能进入新地点。"
+	if not state.locations.has(location_id):
+		return "这里还没有绘制到地图上。"
+	var location: Dictionary = state.locations[location_id]
+	if int(location.range) > int(state.bike.range):
+		state.lin.fatigue += 1
+		state.last_event = "%s 太远了。%s 林行需要修好自行车或找到更安全的路线。" % [location.name, get_location_risk_text(location_id)]
+		return state.last_event
+	state.exploration = {
+		"active_location": location_id,
+		"time_used": 0,
+		"time_limit": max(2, int(location.route_time) + 2),
+		"noise": 0,
+		"searched_rooms": [],
+		"lured_rooms": []
+	}
+	state.phase = "searching"
+	state.last_event = "进入 %s。先读房间，再决定搜哪里；拖太久会把白天耗完。" % location.name
+	return state.last_event
+
+func search_room(room_id: String, tactic: String = "careful") -> String:
+	if state.phase != "searching" or str(state.exploration.active_location) == "":
+		return "林行还没有进入可搜索地点。"
+	var location: Dictionary = state.locations[state.exploration.active_location]
+	if not location.rooms.has(room_id):
+		return "这个房间还没有做进灰盒。"
+	var room: Dictionary = location.rooms[room_id]
+	if bool(room.searched):
+		state.last_event = "%s 已经搜过，再翻只会浪费时间。" % room.name
+		return state.last_event
+
+	state.exploration.time_used += _search_time_for_tactic(room, tactic)
+	var risk_notes := _apply_room_search_risk(room_id, room, tactic)
+	var found := []
+	for resource_name in room.resources.keys():
+		var amount: int = int(room.resources[resource_name])
+		if amount <= 0:
+			continue
+		var taken: int = min(2, amount)
+		room.resources[resource_name] = amount - taken
+		state.resources[resource_name] = int(state.resources.get(resource_name, 0)) + taken
+		found.append("%s +%d" % [resource_name, taken])
+	room.searched = true
+	state.exploration.searched_rooms.append(room_id)
+	if found.is_empty():
+		state.last_event = "搜索 %s。%s这里已经没有能带走的东西。" % [room.name, _room_note_text(risk_notes)]
+	else:
+		state.last_event = "搜索 %s。%s带回：%s。" % [room.name, _room_note_text(risk_notes), ", ".join(found)]
+	return state.last_event
+
+func lure_room(room_id: String) -> String:
+	if state.phase != "searching" or str(state.exploration.active_location) == "":
+		return "林行还没有进入可搜索地点。"
+	var location: Dictionary = state.locations[state.exploration.active_location]
+	if not location.rooms.has(room_id):
+		return "这个房间还没有做进灰盒。"
+	var room: Dictionary = location.rooms[room_id]
+	state.exploration.time_used += 1
+	state.exploration.noise += 1
+	if int(room.hidden_zombies) > 0 and not state.exploration.lured_rooms.has(room_id):
+		state.exploration.lured_rooms.append(room_id)
+		state.last_event = "林行在 %s 外制造噪音，把里面的动静引向另一侧。" % room.name
+	else:
+		state.last_event = "林行在 %s 外制造噪音，但没有听见明显回应。" % room.name
+	return state.last_event
+
+func leave_exploration() -> String:
+	if state.phase != "searching" or str(state.exploration.active_location) == "":
+		return "林行还没有进入可离开的地点。"
+	var location_id := str(state.exploration.active_location)
+	var location: Dictionary = state.locations[location_id]
+	location.visited = true
+	var notes := _apply_evacuation_clues(location_id, location)
+	var over_time: int = max(0, int(state.exploration.time_used) - int(state.exploration.time_limit))
+	if over_time > 0:
+		state.lin.fatigue += over_time
+		notes.append("天色压下来，额外疲劳 +%d。" % over_time)
+	state.phase = "evening"
+	state.exploration = _empty_exploration_state()
+	var note_text := ""
+	if not notes.is_empty():
+		note_text = " %s" % " ".join(notes)
+	state.last_event = "林行离开 %s，赶在天黑前回到据点。%s" % [location.name, note_text]
+	return state.last_event
 
 func explore(location_id: String) -> String:
 	if state.demo_complete:
@@ -404,18 +511,18 @@ func resolve_qimian_for_day(day: int) -> void:
 
 func _default_locations() -> Dictionary:
 	return {
-		"home": _location("林行家", "近圈", 1, 1, {"food": 1, "water": 2, "materials": 1}, "少量补给", "低", 1, "熟路", ["home"]),
-		"convenience": _location("小区便利店", "近圈", 1, 3, {"food": 4, "water": 4, "fuel": 1}, "食物/水", "中", 1, "碎玻璃", ["food", "water"]),
-		"clinic": _location("社区诊所", "近圈", 1, 2, {"meds": 2, "materials": 1}, "药品", "中", 1, "雨后湿滑", ["meds", "question"]),
-		"bike_shop": _location("自行车修理铺", "近圈", 1, 2, {"parts": 3, "materials": 2}, "零件/建材", "中", 1, "堵塞", ["parts", "bike"]),
-		"supermarket": _location("超市", "中圈", 2, 4, {"food": 8, "water": 4, "materials": 2}, "大量食物", "高", 2, "尸群迁移", ["food", "danger"]),
-		"school": _location("废弃学校", "中圈", 2, 3, {"materials": 4, "fuel": 1}, "建材/燃料", "中", 2, "积水", ["materials"]),
-		"police": _location("派出所", "中圈", 2, 5, {"fuel": 2, "materials": 1}, "燃料/地图线索", "高", 2, "路障", ["fuel", "clue"]),
-		"subway": _location("地铁口", "中圈", 2, 5, {"materials": 2, "fuel": 1}, "路线线索", "高", 2, "尸群迁移", ["route", "question"]),
-		"safezone_edge": _location("保护区外围", "远圈", 3, 6, {"materials": 1}, "保护区线索", "极高", 3, "封锁线", ["safezone", "danger"])
+		"home": _location("home", "林行家", "近圈", 1, 1, {"food": 1, "water": 2, "materials": 1}, "少量补给", "低", 1, "熟路", ["home"]),
+		"convenience": _location("convenience", "小区便利店", "近圈", 1, 3, {"food": 4, "water": 4, "fuel": 1}, "食物/水", "中", 1, "碎玻璃", ["food", "water"]),
+		"clinic": _location("clinic", "社区诊所", "近圈", 1, 2, {"meds": 2, "materials": 1}, "药品", "中", 1, "雨后湿滑", ["meds", "question"]),
+		"bike_shop": _location("bike_shop", "自行车修理铺", "近圈", 1, 2, {"parts": 3, "materials": 2}, "零件/建材", "中", 1, "堵塞", ["parts", "bike"]),
+		"supermarket": _location("supermarket", "超市", "中圈", 2, 4, {"food": 8, "water": 4, "materials": 2}, "大量食物", "高", 2, "尸群迁移", ["food", "danger"]),
+		"school": _location("school", "废弃学校", "中圈", 2, 3, {"materials": 4, "fuel": 1}, "建材/燃料", "中", 2, "积水", ["materials"]),
+		"police": _location("police", "派出所", "中圈", 2, 5, {"fuel": 2, "materials": 1}, "燃料/地图线索", "高", 2, "路障", ["fuel", "clue"]),
+		"subway": _location("subway", "地铁口", "中圈", 2, 5, {"materials": 2, "fuel": 1}, "路线线索", "高", 2, "尸群迁移", ["route", "question"]),
+		"safezone_edge": _location("safezone_edge", "保护区外围", "远圈", 3, 6, {"materials": 1}, "保护区线索", "极高", 3, "封锁线", ["safezone", "danger"])
 	}
 
-func _location(name: String, ring: String, range: int, zombies: int, resources: Dictionary, resource_tendency: String, danger_level: String, route_time: int, road_condition: String, icons: Array) -> Dictionary:
+func _location(location_id: String, name: String, ring: String, range: int, zombies: int, resources: Dictionary, resource_tendency: String, danger_level: String, route_time: int, road_condition: String, icons: Array) -> Dictionary:
 	return {
 		"name": name,
 		"ring": ring,
@@ -428,8 +535,84 @@ func _location(name: String, ring: String, range: int, zombies: int, resources: 
 		"road_condition": road_condition,
 		"icons": icons,
 		"qimian_trace": false,
+		"rooms": _rooms_for_location(location_id),
 		"visited": false
 	}
+
+func _empty_exploration_state() -> Dictionary:
+	return {
+		"active_location": "",
+		"time_used": 0,
+		"time_limit": 0,
+		"noise": 0,
+		"searched_rooms": [],
+		"lured_rooms": []
+	}
+
+func _rooms_for_location(location_id: String) -> Dictionary:
+	match location_id:
+		"convenience":
+			return {
+				"front_store": _room("前厅货架", "窗光", 1, 0, {"food": 2, "water": 1}),
+				"back_room": _room("后仓库", "黑暗", 2, 1, {"water": 1, "fuel": 1})
+			}
+		"clinic":
+			return {
+				"front_store": _room("接诊台", "窗光", 1, 0, {"meds": 1, "materials": 1}),
+				"pharmacy": _room("药房", "黑暗", 2, 1, {"meds": 2})
+			}
+		"supermarket":
+			return {
+				"front_store": _room("收银区", "昏暗", 1, 1, {"food": 1, "water": 1}),
+				"back_room": _room("冷库门口", "黑暗", 2, 2, {"food": 3})
+			}
+		_:
+			return {
+				"front_store": _room("入口房间", "昏暗", 1, 0, {"materials": 1}),
+				"back_room": _room("深处房间", "黑暗", 2, 1, {})
+			}
+
+func _room(name: String, visibility: String, search_time: int, hidden_zombies: int, resources: Dictionary) -> Dictionary:
+	return {
+		"name": name,
+		"visibility": visibility,
+		"search_time": search_time,
+		"hidden_zombies": hidden_zombies,
+		"resources": resources,
+		"searched": false
+	}
+
+func _search_time_for_tactic(room: Dictionary, tactic: String) -> int:
+	match tactic:
+		"quick":
+			return max(1, int(room.search_time) - 1)
+		"careful":
+			return int(room.search_time)
+		_:
+			return int(room.search_time)
+
+func _apply_room_search_risk(room_id: String, room: Dictionary, tactic: String) -> Array:
+	var notes := []
+	if int(room.hidden_zombies) <= 0:
+		return notes
+	if state.exploration.lured_rooms.has(room_id):
+		notes.append("隐藏尸群已被引开。")
+		return notes
+	var dark_room := str(room.visibility) == "黑暗"
+	if dark_room or tactic == "quick":
+		state.lin.health = max(0, int(state.lin.health) - 1)
+		state.lin.infection_risk += 1
+		state.lin.stress += 1
+		notes.append("隐藏尸群从暗处扑出，林行受伤并增加感染风险。")
+	else:
+		state.lin.stress += 1
+		notes.append("房间里有隐藏尸群，谨慎搜索让林行勉强避开。")
+	return notes
+
+func _room_note_text(notes: Array) -> String:
+	if notes.is_empty():
+		return ""
+	return "%s " % " ".join(notes)
 
 func _default_facilities() -> Dictionary:
 	return {
