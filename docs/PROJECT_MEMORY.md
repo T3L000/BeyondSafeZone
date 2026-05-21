@@ -92,3 +92,4 @@ This file is the long-term memory for BeyondSafeZone conversations. Append impor
 
 - Added `.gitignore` to keep local Godot caches, local Superpowers/browser-assistant state, generated builds, temporary files, and logs out of source control.
 - `.superpowers/` is a local planning/browser artifact and should not be committed.
+- Created the root initial commit `e2c811e` with message `feat: add Beyond Safe Zone demo foundation`.
