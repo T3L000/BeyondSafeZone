@@ -188,6 +188,20 @@ func start_day(day: int) -> String:
 func get_location_ids() -> Array:
 	return state.locations.keys()
 
+func get_lin_condition_text() -> String:
+	var infection_label := "感染风险：低"
+	if int(state.lin.infection_risk) >= 5:
+		infection_label = "感染风险：危险感染"
+	elif int(state.lin.infection_risk) >= 3:
+		infection_label = "感染风险：发热风险"
+	return "生命 %d / 疲劳 %d / 压力 %d / %s / 希望 %d" % [
+		int(state.lin.health),
+		int(state.lin.fatigue),
+		int(state.lin.stress),
+		infection_label,
+		int(state.lin.hope)
+	]
+
 func get_location_label(location_id: String) -> String:
 	var location: Dictionary = state.locations[location_id]
 	var visit_label := "已搜" if bool(location.visited) else "未搜"
@@ -226,11 +240,13 @@ func get_room_card_text(room_id: String) -> String:
 		return "未知房间。"
 	var room: Dictionary = location.rooms[room_id]
 	var searched_label := "已搜" if bool(room.searched) else "未搜"
-	var zombie_hint := "可能有动静" if int(room.hidden_zombies) > 0 else "暂时安静"
-	return "%s / 能见度：%s / 耗时：%d / %s / %s" % [
+	var zombie_hint := _room_threat_text(room_id, room)
+	var dark_hint := "黑暗风险" if str(room.visibility) == "黑暗" else "可读"
+	return "%s / 能见度：%s / 耗时：%d / %s / %s / %s" % [
 		room.name,
 		room.visibility,
 		int(room.search_time),
+		dark_hint,
 		zombie_hint,
 		searched_label
 	]
@@ -424,6 +440,13 @@ func perform_shelter_action(action_id: String) -> String:
 			state.bike.capacity += 1
 			_mark_facility_used("storage")
 			state.last_event = "林行把食物、水和路上要带的东西重新打包，撤离时能少丢一些。"
+		"treat_wound":
+			if _spend("meds", 1):
+				state.lin.health = min(10, int(state.lin.health) + 1)
+				state.lin.infection_risk = max(0, int(state.lin.infection_risk) - 1)
+				state.last_event = "林行用药品处理伤口，体温稍微压下去，感染风险降低。"
+			else:
+				state.last_event = "没有药品，林行只能用清水压住伤口。"
 		"fortify":
 			if _spend("materials", 2):
 				state.shelter.door += 2
@@ -454,6 +477,9 @@ func sleep_and_resolve_night() -> String:
 	var day := int(state.day)
 	var night_events := []
 	_consume_daily_resources()
+	var infection_event := _resolve_infection_pressure()
+	if infection_event != "":
+		night_events.append(infection_event)
 	if is_blood_moon_day(day):
 		night_events.append(_resolve_blood_moon(day))
 	resolve_qimian_for_day(day)
@@ -613,6 +639,13 @@ func _room_note_text(notes: Array) -> String:
 	if notes.is_empty():
 		return ""
 	return "%s " % " ".join(notes)
+
+func _room_threat_text(room_id: String, room: Dictionary) -> String:
+	if int(room.hidden_zombies) <= 0:
+		return "暂时安静"
+	if state.exploration.lured_rooms.has(room_id):
+		return "隐藏尸群：已引开"
+	return "隐藏尸群：未引开"
 
 func _default_facilities() -> Dictionary:
 	return {
@@ -796,6 +829,13 @@ func _consume_daily_resources() -> void:
 	state.lin.thirst = 0 if int(state.resources.water) > 0 else int(state.lin.thirst) + 1
 	state.lin.fatigue = max(0, int(state.lin.fatigue) - 1)
 	state.lin.stress = max(0, int(state.lin.stress) - int(state.lin.hope / 3))
+
+func _resolve_infection_pressure() -> String:
+	if int(state.lin.infection_risk) < 5:
+		return ""
+	state.lin.health = max(0, int(state.lin.health) - 1)
+	state.lin.stress += 2
+	return "感染风险恶化，林行发热、伤口发烫，生命和压力都受到影响。"
 
 func _spend(resource_name: String, amount: int) -> bool:
 	if int(state.resources.get(resource_name, 0)) < amount:

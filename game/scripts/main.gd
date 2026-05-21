@@ -101,12 +101,8 @@ func _refresh() -> void:
 		state.last_event
 	]
 	day_context_label.text = _build_day_context_text(state)
-	stats_label.text = "林行：生命 %d  疲劳 %d  压力 %d  感染风险 %d  希望 %d\n撤离：广播 %s  地址 %s  自行车 %s" % [
-		state.lin.health,
-		state.lin.fatigue,
-		state.lin.stress,
-		state.lin.infection_risk,
-		state.lin.hope,
+	stats_label.text = "林行：%s\n撤离：广播 %s  地址 %s  自行车 %s" % [
+		sim.get_lin_condition_text(),
 		_flag_label(state.evacuation.safezone_confirmed),
 		_flag_label(state.evacuation.address_known),
 		_flag_label(state.evacuation.bike_ready)
@@ -170,6 +166,7 @@ func _rebuild_action_buttons() -> void:
 		"barricade_windows": "封窗：加固防线（建材-2）",
 		"radio_broadcast": "收音机：听广播（燃料-1）",
 		"organize_storage": "整理台：打包物资",
+		"treat_wound": "处理伤口（药品-1）",
 		"quiet": "降低噪音",
 		"mask_scent": "遮蔽气味（建材-1）"
 	}
@@ -218,11 +215,12 @@ func _rebuild_room_search_buttons() -> void:
 	var location_id := str(sim.state.exploration.active_location)
 	var location: Dictionary = sim.state.locations[location_id]
 	var header := Label.new()
-	header.text = "室内搜索：%s  时间 %d/%d  噪音 %d" % [
+	header.text = "室内搜索：%s  时间 %d/%d  噪音 %d\n%s" % [
 		location.name,
 		int(sim.state.exploration.time_used),
 		int(sim.state.exploration.time_limit),
-		int(sim.state.exploration.noise)
+		int(sim.state.exploration.noise),
+		sim.get_lin_condition_text()
 	]
 	header.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	action_box.add_child(header)
@@ -241,6 +239,15 @@ func _rebuild_room_search_buttons() -> void:
 			_refresh()
 		)
 		action_box.add_child(search_button)
+
+		var quick_button := Button.new()
+		quick_button.text = "快速搜索：%s" % location.rooms[room_id].name
+		quick_button.disabled = bool(location.rooms[room_id].searched)
+		quick_button.pressed.connect(func() -> void:
+			sim.search_room(room_id, "quick")
+			_refresh()
+		)
+		action_box.add_child(quick_button)
 
 		var lure_button := Button.new()
 		lure_button.text = "制造噪音：%s" % location.rooms[room_id].name

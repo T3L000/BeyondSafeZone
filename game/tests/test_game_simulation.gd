@@ -6,6 +6,7 @@ var failures: Array[String] = []
 
 func _initialize() -> void:
 	_test_initial_goal_and_stats()
+	_test_lin_condition_text_reports_infection_stage()
 	_test_resources_and_evacuation_flags_match_latest_scope()
 	_test_shelter_facilities_exist_with_core_roles()
 	_test_day_event_table_and_morning_context()
@@ -20,10 +21,14 @@ func _initialize() -> void:
 	_test_qimian_actions_mark_affected_map_nodes()
 	_test_locations_expose_indoor_search_rooms()
 	_test_enter_location_starts_indoor_search_phase()
+	_test_room_card_text_reports_dark_risk_and_lure_state()
 	_test_search_room_collects_resources_and_leave_advances_to_evening()
 	_test_dark_hidden_zombie_room_causes_deterministic_injury()
 	_test_noise_lure_reduces_hidden_zombie_injury_but_spends_time()
 	_test_overstaying_indoor_search_adds_fatigue_on_leave()
+	_test_high_infection_risk_worsens_at_night()
+	_test_treat_wound_spends_medicine_and_reduces_infection()
+	_test_treat_wound_without_medicine_does_not_change_condition()
 	_test_facility_actions_drive_recovery_and_evacuation_readiness()
 	_test_storage_table_preserves_supplies_for_escape()
 	_test_qimian_wakes_on_day_five_and_uses_default_card()
@@ -46,6 +51,16 @@ func _test_initial_goal_and_stats() -> void:
 	_expect_true(state.morning_context.text.length() > 0, "new game has a morning context")
 	_expect_true(state.last_event.find("林行") >= 0, "opening text names Lin Xing")
 	_expect_true(state.last_event.find("家") >= 0, "opening starts from home")
+
+func _test_lin_condition_text_reports_infection_stage() -> void:
+	var sim = Simulation.new()
+	sim.new_game()
+	var initial_text: String = sim.get_lin_condition_text()
+	_expect_true(initial_text.find("感染风险：低") >= 0, "new game reports low infection risk")
+	sim.state.lin.infection_risk = 3
+	_expect_true(sim.get_lin_condition_text().find("发热风险") >= 0, "infection risk 3 reports fever risk")
+	sim.state.lin.infection_risk = 5
+	_expect_true(sim.get_lin_condition_text().find("危险感染") >= 0, "infection risk 5 reports dangerous infection")
 
 func _test_resources_and_evacuation_flags_match_latest_scope() -> void:
 	var sim = Simulation.new()
@@ -197,6 +212,17 @@ func _test_enter_location_starts_indoor_search_phase() -> void:
 	_expect_true(result.find("进入") >= 0, "enter location reports entry text")
 	_expect_true(sim.get_room_card_text("front_store").find("能见度") >= 0, "room card surfaces visibility")
 
+func _test_room_card_text_reports_dark_risk_and_lure_state() -> void:
+	var sim = Simulation.new()
+	sim.new_game()
+	sim.enter_location("clinic")
+	var before_lure: String = sim.get_room_card_text("pharmacy")
+	_expect_true(before_lure.find("黑暗风险") >= 0, "dark room card reports dark risk")
+	_expect_true(before_lure.find("未引开") >= 0, "room card reports unlured hidden threat")
+	sim.lure_room("pharmacy")
+	var after_lure: String = sim.get_room_card_text("pharmacy")
+	_expect_true(after_lure.find("已引开") >= 0, "room card reports lured hidden threat")
+
 func _test_search_room_collects_resources_and_leave_advances_to_evening() -> void:
 	var sim = Simulation.new()
 	sim.new_game()
@@ -248,6 +274,43 @@ func _test_overstaying_indoor_search_adds_fatigue_on_leave() -> void:
 	var result: String = sim.leave_exploration()
 	_expect_true(sim.state.lin.fatigue > starting_fatigue, "overstaying indoor search adds fatigue")
 	_expect_true(result.find("天色") >= 0, "leaving after overstaying reports time pressure")
+
+func _test_high_infection_risk_worsens_at_night() -> void:
+	var sim = Simulation.new()
+	sim.new_game()
+	sim.state.phase = "evening"
+	sim.state.lin.infection_risk = 5
+	var starting_health: int = sim.state.lin.health
+	var starting_stress: int = sim.state.lin.stress
+	var result: String = sim.sleep_and_resolve_night()
+	_expect_true(sim.state.lin.health < starting_health, "dangerous infection costs health during night resolution")
+	_expect_true(sim.state.lin.stress > starting_stress, "dangerous infection raises stress during night resolution")
+	_expect_true(result.find("感染") >= 0, "night result reports infection pressure")
+
+func _test_treat_wound_spends_medicine_and_reduces_infection() -> void:
+	var sim = Simulation.new()
+	sim.new_game()
+	sim.state.phase = "evening"
+	sim.state.lin.health = 7
+	sim.state.lin.infection_risk = 4
+	sim.state.resources.meds = 2
+	var result: String = sim.perform_shelter_action("treat_wound")
+	_expect_equal(sim.state.resources.meds, 1, "treat wound spends one medicine")
+	_expect_equal(sim.state.lin.health, 8, "treat wound restores one health")
+	_expect_equal(sim.state.lin.infection_risk, 3, "treat wound reduces infection risk")
+	_expect_true(result.find("处理伤口") >= 0, "treat wound reports wound treatment")
+
+func _test_treat_wound_without_medicine_does_not_change_condition() -> void:
+	var sim = Simulation.new()
+	sim.new_game()
+	sim.state.phase = "evening"
+	sim.state.lin.health = 6
+	sim.state.lin.infection_risk = 3
+	sim.state.resources.meds = 0
+	var result: String = sim.perform_shelter_action("treat_wound")
+	_expect_equal(sim.state.lin.health, 6, "failed wound treatment does not change health")
+	_expect_equal(sim.state.lin.infection_risk, 3, "failed wound treatment does not change infection risk")
+	_expect_true(result.find("没有药品") >= 0, "failed wound treatment reports missing medicine")
 
 func _test_facility_actions_drive_recovery_and_evacuation_readiness() -> void:
 	var sim = Simulation.new()
