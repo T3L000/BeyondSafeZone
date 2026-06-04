@@ -1,0 +1,779 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>保护区之外 - 灰盒演示</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0a0a14;color:#ddd;font-family:'Courier New','SimHei',monospace;overflow:hidden}
+#app{display:flex;height:100vh}
+#sidebar{width:300px;background:#111122;padding:12px;display:flex;flex-direction:column;gap:6px;font-size:13px;overflow-y:auto;border-right:2px solid #222244}
+#sidebar h3{color:#e94560;font-size:14px;margin-bottom:2px;border-bottom:1px solid #333}
+#view{flex:1;position:relative;background:#0d0d1a}
+canvas{display:block}
+.stat-row{display:flex;justify-content:space-between;align-items:center}
+.stat-bar{flex:1;height:8px;background:#222;margin:0 6px;border-radius:4px;overflow:hidden}
+.stat-fill{height:100%;border-radius:4px;transition:width .3s}
+.btn{background:#1a1a3a;color:#ddd;border:1px solid #333;padding:6px 8px;margin:2px 0;cursor:pointer;font-size:12px;font-family:inherit;text-align:left;border-radius:3px}
+.btn:hover{background:#2a2a5a;border-color:#e94560}
+.btn:disabled{opacity:.35;cursor:not-allowed}
+.btn.action{background:#1a2a1a;border-color:#263}
+.btn.danger{background:#2a1a1a;border-color:#633}
+.btn.gold{background:#2a2a0a;border-color:#663}
+.btn.active{background:#1a3a3a;border-color:#3aa;animation:pulse .8s infinite}
+@keyframes pulse{50%{border-color:#e94560}}
+#log{background:#0a0a18;flex:1;overflow-y:auto;font-size:11px;padding:6px;border-radius:4px;min-height:0;line-height:1.5}
+#log .day{color:#e94560;font-weight:bold}
+#log .clue{color:#ffaa44}
+#log .qimian{color:#88aaff}
+.phase-tag{display:inline-block;padding:1px 6px;border-radius:3px;font-size:11px}
+.phase-morning{background:#334} .phase-day{background:#443} .phase-searching{background:#343}
+.phase-evening{background:#434} .phase-night{background:#223} .phase-reveal{background:#e9456033}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="sidebar">
+    <div style="text-align:center;font-size:16px;color:#e94560;font-weight:bold">🏚️ 保护区之外</div>
+    <div id="day-phase" style="text-align:center;font-size:12px"></div>
+
+    <h3>🧑 林行</h3>
+    <div id="stats"></div>
+
+    <h3>📦 资源</h3>
+    <div id="resources"></div>
+
+    <h3>🏠 据点</h3>
+    <div id="shelter-stats"></div>
+
+    <h3>🎮 操作</h3>
+    <div id="actions"></div>
+
+    <button class="btn gold" onclick="autoPlayFull()" style="width:100%">⏩ 自动演示15天</button>
+    <button class="btn" onclick="newGame()" style="width:100%">🔄 重新开始</button>
+
+    <h3>📜 日志</h3>
+    <div id="log"></div>
+  </div>
+  <div id="view">
+    <canvas id="game"></canvas>
+  </div>
+</div>
+
+<script>
+// ==================== GAME STATE ====================
+const S = {};
+let mode = "map"; // map | explore | shelter | reveal
+let exploreLoc = "";
+let animFrame = 0;
+let viewW, viewH;
+
+function deepCopy(o){return JSON.parse(JSON.stringify(o))}
+
+function newGame(){
+  Object.assign(S,{
+    day:1, phase:"morning", goal:"撤离到保护区", demo_complete:false, ending:"in_progress",
+    morning:{text:"林行在家中旧沙发上醒来。",pressure:"tutorial",clue:"收音机里保护区断续广播。",bm:""},
+    applied:[], blood_moons:[],
+    res:{food:5,water:5,meds:2,materials:4,parts:1,fuel:3},
+    lin:{hp:10,hg:0,th:0,fat:1,str:2,inf:0,hope:4},
+    shelter:{door:4,noise:2,scent:2,light:2,def:1,esc:0,preserve:0},
+    bike:{dur:6,cap:6,range:1,noise:1},
+    car:{found:false,ready:false,s1:false,s2:false,s3:false,s4:false},
+    cp:{battery:0,gasoline:0,tire:0},
+    evac:{sz:false,addr:false,car:false,bike:false},
+    exp:{active:"",tused:0,tlim:0,noise:0,searched:[],lured:[]},
+    qimian:{awake:false,log:[],clues:[],ai:{exp:0,moto:1,heat:{A:0,B:0,C:0},qijin:0}},
+    reveal:{unlocked:false,summary:""},
+    locs:buildLocations(),
+    logLines:[]
+  });
+  mode="map"; exploreLoc="";
+  addLog("🎮 新游戏 —— 林行，第1天","day");
+  renderAll();
+}
+
+// ==================== LOCATION DATA ====================
+const LOCDEF = {
+  home:{x:0.78,y:0.75,r:"近",rz:1,zom:1,dg:"低",road:"熟路",icons:["🏠"],rooms:[
+    ["living_room","客厅","明",1,0,{food:1,water:1,materials:1},["plan_found"]],
+    ["storage","储物间","暗",2,1,{materials:3,parts:2},[]]
+  ]},
+  convenience:{x:0.68,y:0.68,r:"近",rz:1,zom:3,dg:"中",road:"碎玻璃",icons:["🍞","💧"],rooms:[
+    ["storefront","店面","明",1,0,{food:3,water:2},[]],
+    ["warehouse","仓库夹层","暗",2,1,{food:2,materials:1},["safezone_hint_1"]]
+  ]},
+  clinic:{x:0.58,y:0.78,r:"近",rz:1,zom:2,dg:"中",road:"湿滑",icons:["💊","❓"],rooms:[
+    ["waiting","候诊室","明",1,0,{water:2,materials:1},[]],
+    ["exam_a","诊室A","明",1,1,{meds:2},["rebirth_clue_1"]],
+    ["pharmacy","药房","暗",2,2,{meds:4},[]]
+  ]},
+  bike_shop:{x:0.88,y:0.82,r:"近",rz:1,zom:2,dg:"中",road:"堵塞",icons:["🔧","🚲"],rooms:[
+    ["storefront","店面","明",1,0,{parts:3,materials:1,tire:1},[]],
+    ["workshop","工作间","明",1,1,{parts:2,fuel:1},[]],
+    ["garage","车库","暗",2,0,{},["car_found"]]
+  ]},
+  supermarket:{x:0.42,y:0.55,r:"中",rz:2,zom:4,dg:"高",road:"尸群迁移",icons:["🍞","⚠️"],rooms:[
+    ["checkout","收银区","明",1,1,{food:2,water:1},[]],
+    ["food_aisle","食品区","明",2,1,{food:5},[]],
+    ["storage","仓储区","暗",2,2,{food:3,fuel:1,meds:1},[]]
+  ]},
+  school:{x:0.35,y:0.72,r:"中",rz:2,zom:3,dg:"中",road:"积水",icons:["🧱"],rooms:[
+    ["class_a","教室A","明",1,1,{materials:2,food:1},[]],
+    ["library","图书馆","暗",2,1,{fuel:1},["childhood_memory"]],
+    ["gym","体育馆","昏",2,3,{food:2,materials:3},[]]
+  ]},
+  police:{x:0.52,y:0.42,r:"中",rz:2,zom:5,dg:"高",road:"路障",icons:["⛽","📋"],rooms:[
+    ["lobby","大厅","明",1,1,{materials:1},["address_known"]],
+    ["office","办公室","明",2,0,{parts:1,fuel:1},["rebirth_clue_2"]],
+    ["parking","停车场","明",1,1,{battery:1,fuel:1},[]]
+  ]},
+  subway:{x:0.62,y:0.38,r:"中",rz:2,zom:5,dg:"高",road:"尸群迁移",icons:["🗺️","❓"],rooms:[
+    ["entrance","入口大厅","昏",1,0,{materials:2,water:1},[]],
+    ["platform","月台","暗",3,4,{fuel:2,parts:1,gasoline:1},["rebirth_poster"]]
+  ]},
+  bridge_camp:{x:0.28,y:0.45,r:"中",rz:2,zom:1,dg:"低",road:"熟路",icons:["🧑"],rooms:[
+    ["camp_fire","篝火旁","明",1,0,{},[]]
+  ]},
+  gas_station:{x:0.72,y:0.28,r:"中",rz:2,zom:4,dg:"高",road:"尸群迁移",icons:["⛽","⚠️"],rooms:[
+    ["store","便利店","明",1,1,{food:2,water:2},[]],
+    ["pump","加油泵","明",1,0,{fuel:2,gasoline:2},[]]
+  ]},
+  hardware:{x:0.45,y:0.68,r:"中",rz:2,zom:3,dg:"中",road:"堵塞",icons:["🧱"],rooms:[
+    ["storefront","店面","明",1,1,{materials:3,parts:1},[]],
+    ["shelves","货架区","明",1,1,{materials:3},[]]
+  ]},
+  apartment:{x:0.38,y:0.6,r:"中",rz:2,zom:3,dg:"中",road:"积水",icons:["❓","🧑"],rooms:[
+    ["lobby","一楼大厅","昏",1,2,{materials:1},[]],
+    ["room_302","302室","暗",2,2,{food:1,meds:1},["apartment_letter"]],
+    ["room_402","402室","明",1,1,{meds:1},["qijin_apartment"]]
+  ]},
+  safezone:{x:0.15,y:0.2,r:"远",rz:3,zom:6,dg:"极高",road:"封锁线",icons:["🏕️","⚠️"],rooms:[
+    ["tower","哨塔","明",1,0,{},["lab_location"]],
+    ["checkpoint","检查站","明",1,2,{fuel:1,battery:1},[]]
+  ]},
+  quarantine:{x:0.22,y:0.12,r:"远",rz:3,zom:4,dg:"高",road:"封锁线",icons:["💊","❓"],rooms:[
+    ["isolation","隔离大厅","明",1,1,{meds:3,materials:1},[]],
+    ["specimen","标本室","暗",2,0,{},["qimian_file"]]
+  ]}
+};
+
+function buildLocations(){
+  let locs = {};
+  for(let lid in LOCDEF){
+    let d = LOCDEF[lid];
+    let rooms = {};
+    for(let r of d.rooms){
+      rooms[r[0]] = {name:r[1],vis:r[2],time:r[3],zn:r[4],res:deepCopy(r[5]),flags:r[6].slice(),locked:false,searched:false};
+    }
+    locs[lid] = {name:d.name,x:d.x,y:d.y,r:d.r,rz:d.rz,zom:d.zom,dg:d.dg,road:d.road,icons:d.icons.slice(),rooms,visited:false,qtrace:false};
+  }
+  return locs;
+}
+
+// ==================== DAY EVENTS ====================
+const DEV = {
+  1:{t:"林行在家中的旧沙发上醒来，桌上压着童年画过的末日避难路线。",p:"tutorial",c:"收音机里保护区断续广播。",bm:"",m:{}},
+  2:{t:"楼下有人翻过垃圾桶，瓶装水比昨天更难找。",p:"scarcity",c:"便利店门口的玻璃碎得很整齐。",bm:"",m:{water:-1}},
+  3:{t:"清晨有短促敲门声，门外只剩一串拖痕。",p:"stress",c:"墙上多了一句保护区方向的粉笔字。",bm:"",m:{str:1}},
+  4:{t:"自行车链条卡住了，远处广播却催促幸存者尽快转移。",p:"mobility",c:"修理铺附近的尸群被什么声音吸引过。",bm:"",m:{bike_dur:-1}},
+  5:{t:"雨停后气味闷在楼道里，据点开始暴露生活痕迹；城市另一端有人从感染昏睡中醒来。",p:"qimian",c:"楼梯口能闻到潮湿血腥味。",bm:"",m:{scent:1,str:1}},
+  6:{t:"月色比平时更红，收音机要求外围幸存者提前熄灯。",p:"warning",c:"保护区广播第一次提到血月。",bm:"⚠️ 明晚血月！",m:{noise:1}},
+  7:{t:"血月当天，街上几乎没有普通尸群的游荡声，像是在等夜晚。",p:"blood_moon",c:"窗外的月亮还没升起，玻璃已经开始轻轻震动。",bm:"🔴 今晚血月！",m:{str:1}},
+  8:{t:"血月过后，附近街区被翻得乱七八糟。",p:"aftermath",c:"保护区广播说中圈仍有通行可能。",bm:"",m:{door:-1}},
+  9:{t:"自行车还能撑一段路，但每一次远行都会留下更响的动静。",p:"mobility",c:"废弃学校方向飘来断续铃声。",bm:"",m:{bike_dur:-1}},
+  10:{t:"社区诊所的门被风吹开，里面安静得不正常。",p:"foreshadow",c:"有个药柜像是被人从里面重新锁上。",bm:"",m:{str:1}},
+  11:{t:"红潮的暗光从东边漫过来，整个街区异常安静。",p:"red_tide",c:"窗外的暗红色比昨晚更浓。",bm:"🌊 红潮夜！",m:{hope:1,str:1}},
+  12:{t:"超市方向没有争抢声，只有货架被拖动后的空响。",p:"red_tide",c:"最容易保存的食物像是被人有计划地拿走。",bm:"🌊 红潮夜！",m:{str:1,noise:1}},
+  13:{t:"红潮夜连续第四天，地铁口的尸群突然稀了。墙上有一道像箭头的划痕。",p:"red_tide",c:"有人在红潮中移动得比丧尸还安静。",bm:"⚠️ 明晚终局血月！",m:{hope:1,scent:1}},
+  14:{t:"收音机紧急广播：超大型尸潮将在24小时内抵达本区！",p:"red_tide",c:"据点墙壁不停震动——撑不过今晚了。",bm:"🔴 明晚终局血月！",m:{str:2,scent:1,door:-1}},
+  15:{t:"收音机最后一次响了——然后陷入永久的沉默。窗外地平线上，一道黑线正在扩大。",p:"blood_moon",c:"林行把最后的背包扔进后备箱，发动了引擎。",bm:"🔴 终局血月！",m:{str:3}}
+};
+
+const QP = {
+  5:[{t:"祁眠醒来",tr:"从感染昏睡中醒来，确认丧尸不主动攻击自己。",pub:"远处旧楼有一扇门从里面被打开，又被人小心合上。",ai:"规则：先确认身体，再寻找祁烬，避免暴露。",sub:"他们没有扑上来。我还活着。"}],
+  6:[{t:"诊所取药",tr:"只拿走任务途中需要的药品。",pub:"社区诊所药柜被重新锁过，锁孔旁有新鲜刮痕。",loc:"clinic",res:"meds",a:-1,ai:"规则：只拿任务所需，不制造明显抢掠痕迹。",sub:"够路上用就行。"}],
+  8:[{t:"超市夜行",tr:"拿走一部分便携食物，避开人类巡逻。",pub:"超市货架像被人有计划地清过。",loc:"supermarket",res:"food",a:-2,ai:"补给优先，避免接触。",sub:"货架空一点，总比我被拖去筛查好。"}],
+  10:[{t:"骑摩托清桥",tr:"深夜骑摩托到桥头，利用喇叭和燃烧物引离尸群。",pub:"学校方向河道桥上，尸群在一夜之间稀疏了大半。桥面散落照明棒和刹车痕。",loc:"school",zd:-2,ai:"不能正面清怪，用噪音和光源引导。",sub:"桥通了一条路。他们不知道是谁做的。"}],
+  11:[{t:"尸群偏移",tr:"为了避开探照灯，把尸群引到另一条街。",pub:"地铁口的尸群少了，墙上有一条像是刻意留下的箭头。",loc:"subway",zd:-2,ai:"避免暴露，顺路降低幸存者风险。",sub:"灯扫过来之前，尸群得先动。"}],
+  14:[{t:"红潮夜观察",tr:"最后巡查近圈，确认巡逻队今夜不会进入该街区，留下药品应急。",pub:"诊所门口多了一支未拆封的抗生素。",rgain:{meds:1},ai:"避开暴露，最后确认安全窗口。",sub:"趁他们缩在营地里，把这里最后一扇窗关好。"}],
+  15:[{t:"尸群藏身",tr:"藏在尸群里改变路线，间接让林行抵达筛查棚。",pub:"保护区外尸群像被某个看不见的人牵走，给筛查棚前让出一条窄路。",bms:2,ai:"避开筛查，继续追查祁烬。",sub:"那个人擦肩而过。我不能停。"},
+      {t:"双层揭示",tr:"林行只听见异常线索，玩家看到祁眠完整行动回放。",pub:"筛查棚外有人低声议论：昨晚尸群像被人牵走了，还有摩托穿过了东线封锁。",ai:"玩家获得上帝视角。",sub:"如果那个人是他，我也已经错过。"}]
+};
+
+// ==================== GAME LOGIC ====================
+function isBM(d){return[7,15].includes(d)}
+function isRT(d){return[11,12,13,14].includes(d)}
+
+function startDay(d){
+  S.day=d; if(S.phase!="reveal") S.phase="morning";
+  let e=DEV[d]||{t:"",p:"unknown",c:"",bm:"",m:{}};
+  S.morning={text:e.t,pressure:e.p,clue:e.c,bm:e.bm};
+  if(!S.applied.includes(d)){
+    for(let k in e.m){
+      let v=e.m[k];
+      if(k=="water") S.res.water=Math.max(0,S.res.water+v);
+      if(k=="str") S.lin.str=Math.max(0,S.lin.str+v);
+      if(k=="hope") S.lin.hope=Math.max(0,S.lin.hope+v);
+      if(k=="door") S.shelter.door=Math.max(0,S.shelter.door+v);
+      if(k=="noise") S.shelter.noise=Math.max(0,S.shelter.noise+v);
+      if(k=="scent") S.shelter.scent=Math.max(0,S.shelter.scent+v);
+      if(k=="bike_dur") S.bike.dur=Math.max(0,S.bike.dur+v);
+    }
+    S.applied.push(d);
+  }
+  mode="map"; exploreLoc="";
+  addLog(`☀️ 第 ${d} 天 —— ${e.t} ${e.c}`,"day");
+  renderAll();
+}
+
+function enterLoc(lid){
+  if(S.demo_complete||!["morning","day"].includes(S.phase)) return;
+  let loc=S.locs[lid]; if(!loc) return;
+  if(loc.rz>S.bike.range){S.lin.fat+=1; addLog(`${loc.name} 太远了。`,""); renderAll(); return}
+  let rp=roadPen(loc.road);
+  S.lin.fat+=loc.rz+rp; S.lin.str+=Math.max(0,loc.zom-2);
+  S.bike.dur=Math.max(0,S.bike.dur-loc.rz);
+  let p=loc.zom+loc.rz+S.bike.noise;
+  if(p>=8){S.lin.hp=Math.max(0,S.lin.hp-1);S.lin.str+=2}
+  else if(p>=5) S.lin.str+=1;
+  S.exp={active:lid,tused:0,tlim:Math.max(3,loc.rz+2),noise:0,searched:[],lured:[]};
+  S.phase="searching"; mode="explore"; exploreLoc=lid;
+  addLog(`🚪 进入 ${loc.name}。选择房间搜索。`,"");
+  renderAll();
+}
+function roadPen(r){return["熟路","碎玻璃"].includes(r)?0:["湿滑","积水","堵塞","路障"].includes(r)?1:2}
+
+function searchRoom(rid,tactic="careful"){
+  if(S.phase!="searching"||!exploreLoc) return;
+  let loc=S.locs[exploreLoc], room=loc.rooms[rid];
+  if(!room||room.searched) return;
+  if(room.locked){addLog(`🔒 ${room.name} 门锁着。`,""); return}
+  let st=tactic=="quick"?Math.max(1,room.time-1):room.time;
+  S.exp.tused+=st;
+  let risk="", found=[];
+  if(room.zn>0&&!S.exp.lured.includes(rid)){
+    if(room.vis=="暗"||tactic=="quick"){S.lin.hp=Math.max(0,S.lin.hp-1);S.lin.inf+=1;S.lin.str+=1;risk="⚠️ 隐藏尸群扑出！受伤+感染。"}
+    else{S.lin.str+=1;risk="⚠️ 勉强避开尸群。"}
+  }else if(room.zn>0) risk="🟢 尸群已被引开。";
+  for(let rn in room.res){
+    let amt=room.res[rn]; if(amt<=0) continue;
+    let tk=Math.min(2,amt); room.res[rn]=amt-tk;
+    if(["battery","gasoline","tire"].includes(rn)){S.cp[rn]=(S.cp[rn]||0)+tk; found.push(`🔧${rn}+${tk}`)}
+    else{S.res[rn]=(S.res[rn]||0)+tk; found.push(`${rn}+${tk}`)}
+  }
+  let fn=applyFlags(room.flags); if(fn.length) found.push("📋"+fn.join(" "));
+  room.searched=true; S.exp.searched.push(rid);
+  addLog(`🔍 ${room.name}：${risk}  ${found.join("，")||"空手而归"}`,"");
+  renderAll();
+}
+
+function lureRoom(rid){
+  if(S.phase!="searching"||!exploreLoc) return;
+  let room=S.locs[exploreLoc].rooms[rid];
+  S.exp.tused+=1; S.exp.noise+=1;
+  if(room.zn>0&&!S.exp.lured.includes(rid)){S.exp.lured.push(rid); addLog(`📢 制造噪音，引开 ${room.name} 中的尸群。`,"")}
+  else addLog(`📢 制造噪音，没有回应。`,"");
+  renderAll();
+}
+
+function leaveExplore(){
+  if(S.phase!="searching"||!exploreLoc) return;
+  let loc=S.locs[exploreLoc]; loc.visited=true;
+  if(["police","subway","safezone"].includes(exploreLoc)){
+    if(!S.evac.addr){S.evac.addr=true; addLog("📍 找到保护区筛查棚地址！","clue")}
+  }
+  if(exploreLoc=="safezone"&&!S.evac.sz){S.evac.sz=true; addLog("📻 确认保护区仍在接收。","clue")}
+  let over=Math.max(0,S.exp.tused-S.exp.tlim);
+  if(over>0){S.lin.fat+=over; addLog(`🌆 天色已晚，额外疲劳 +${over}。`,"")}
+  S.phase="evening"; mode="map"; exploreLoc="";
+  addLog(`🏠 回到据点。`,"");
+  renderAll();
+}
+
+function applyFlags(flags){
+  let n=[];
+  for(let f of flags){
+    switch(f){
+      case"plan_found":S.lin.hope+=1;n.push("童年避难计划图纸");break;
+      case"safezone_hint_1":n.push("纸条：保护区在南边");break;
+      case"rebirth_clue_1":n.push("隔离记录：零号病人");break;
+      case"rebirth_clue_2":n.push("名单红圈——「烬」");break;
+      case"address_known":S.evac.addr=true;n.push("筛查棚地图碎片");break;
+      case"childhood_memory":S.lin.hope+=1;n.push("三人末日避难计划");break;
+      case"rebirth_poster":n.push("返生计划海报");break;
+      case"car_found":S.car.found=true;n.push("旧轿车！");break;
+      case"crowbar_found":S.res.parts+=1;n.push("找到撬棍");break;
+      case"lab_location":n.push("返生计划实验室地址");break;
+      case"qimian_file":n.push("零号感染者档案");break;
+      case"apartment_letter":n.push("信件：不要去实验室");break;
+      case"qijin_apartment":n.push("祁烬·社区联络处");break;
+      case"rebirth_insider":S.lin.hope+=1;n.push("返生计划内幕情报");break;
+    }
+  }
+  return n;
+}
+
+function shelterAct(aid){
+  if(S.demo_complete||!["evening","night"].includes(S.phase)) return;
+  let act=aid=="rest"?"rest_bed":aid;
+  switch(act){
+    case"rest_bed":S.lin.fat=Math.max(0,S.lin.fat-2);S.lin.str=Math.max(0,S.lin.str-1);addLog("🛏️ 休息恢复疲劳和压力。","");break;
+    case"repair":if(S.res.parts>=1){S.res.parts-=1;S.bike.dur+=3;S.bike.range=Math.min(3,S.bike.range+1);if(S.bike.range>=3)S.evac.bike=true;addLog("🔧 修好自行车。范围+1。","")}else addLog("❌ 零件不足。","");break;
+    case"barricade":if(S.res.materials>=2){S.res.materials-=2;S.shelter.door+=1;S.shelter.def+=1;addLog("🪟 加固门窗。","")}else addLog("❌ 建材不足。","");break;
+    case"radio":if(S.res.fuel>=1){S.res.fuel-=1;S.lin.hope+=1;S.shelter.noise+=1;radioMsg()}else addLog("❌ 燃料不足。","");break;
+    case"organize":S.shelter.preserve=Math.min(3,S.shelter.preserve+1);addLog("📦 整理物资。","");break;
+    case"treat":if(S.res.meds>=1){S.res.meds-=1;S.lin.hp=Math.min(10,S.lin.hp+1);S.lin.inf=Math.max(0,S.lin.inf-1);addLog("💊 处理伤口。感染-1。","")}else addLog("❌ 没有药品。","");break;
+    case"car":repairCar();return;
+    case"fortify":if(S.res.materials>=2){S.res.materials-=2;S.shelter.door+=2;S.shelter.def+=1;addLog("🛡️ 加固防线。","")}else addLog("❌ 建材不足。","");break;
+    case"quiet":S.shelter.noise=Math.max(0,S.shelter.noise-1);S.lin.str+=1;addLog("🤫 降低噪音。","");break;
+    case"mask":if(S.res.materials>=1){S.res.materials-=1;S.shelter.scent=Math.max(0,S.shelter.scent-1);addLog("🫙 遮蔽气味。","")}else addLog("❌ 材料不足。","");break;
+  }
+  S.phase="night"; renderAll();
+}
+function radioMsg(){
+  if(S.day>=14) addLog("📻 紧急广播：超大型尸潮逼近！最后撤离机会！","clue");
+  else if(S.day>=11) addLog("📻 红潮扩大，保护区外围已加固。","");
+  else if(S.day>=9){S.evac.addr=true; addLog("📻 广播说清筛查棚地址，但所有人必须接受感染初筛。","clue");}
+  else{S.evac.sz=true; addLog("📻 断续广播：保护区仍在接收幸存者。","clue");}
+}
+
+function repairCar(){
+  if(!S.car.found){addLog("还没找到汽车。","");return}
+  if(S.car.ready){addLog("✅ 汽车已就绪。","");return}
+  if(!S.car.s1){if(S.res.materials>=2&&S.res.parts>=1){S.res.materials-=2;S.res.parts-=1;S.car.s1=true;addLog("🚗 引擎线路接通！","")}else addLog("需要建材×2+零件×1","");}
+  else if(!S.car.s2){if((S.cp.tire||0)>=1&&S.res.parts>=1){S.cp.tire-=1;S.res.parts-=1;S.car.s2=true;addLog("🚗 轮胎换好！","")}else addLog("需要轮胎+零件","");}
+  else if(!S.car.s3){if((S.cp.battery||0)>=1&&S.res.fuel>=1){S.cp.battery-=1;S.res.fuel-=1;S.car.s3=true;addLog("🚗 电瓶装好！","")}else addLog("需要电瓶+燃料","");}
+  else if(!S.car.s4){if((S.cp.gasoline||0)>=2){S.cp.gasoline-=2;S.car.s4=true;S.car.ready=true;S.evac.car=true;S.lin.hope+=1;addLog("🚗 加油完毕——汽车就绪！","")}else addLog("需要汽油×2","");}
+  renderAll();
+}
+
+function qimianBMS(d){let s=0;let p=QP[d];if(!p)return 0;for(let a of p)s+=a.bms||0;return s}
+
+function sleepNight(){
+  if(S.demo_complete||!["evening","night"].includes(S.phase)) return;
+  let d=S.day;
+  S.res.food=Math.max(0,S.res.food-1); S.res.water=Math.max(0,S.res.water-1);
+  if(S.res.food<=0)S.lin.hg++;else S.lin.hg=0;
+  if(S.res.water<=0)S.lin.th++;else S.lin.th=0;
+  S.lin.fat=Math.max(0,S.lin.fat-1); S.lin.str=Math.max(0,S.lin.str-Math.floor(S.lin.hope/3));
+
+  let ne=[];
+  let tn=S.shelter.noise+S.exp.noise;
+  if(tn>2){let at=0;for(let l of["convenience","clinic","bike_shop"]){if(S.locs[l]&&S.locs[l].rz<=1){let a=Math.min(2,tn-2);S.locs[l].zom+=a;at+=a}} if(at>0)ne.push(tn>=6?`噪音引来尸群(+${at})`:`动静吸引尸群(+${at})`)}
+  if(S.lin.inf>=5){S.lin.hp=Math.max(0,S.lin.hp-1);S.lin.str+=2;ne.push("感染恶化！")}
+
+  // Qimian
+  resolveQimian(d);
+  if(S.qimian.clues.length) ne.push(S.qimian.clues[S.qimian.clues.length-1]);
+
+  if(isBM(d)){
+    let sup=qimianBMS(d), press=4+Math.floor(d/7)*2+S.shelter.noise+S.shelter.scent+S.shelter.light-S.shelter.door-S.shelter.def-sup;
+    if(!S.blood_moons.includes(d))S.blood_moons.push(d);
+    if(press<=3){S.lin.hope+=1;ne.push("🔴 血月被撑过去！")}
+    else if(press<=6){S.shelter.door=Math.max(1,S.shelter.door-1);S.res.food=Math.max(0,S.res.food-1);ne.push("🔴 血月擦过，门窗受损")}
+    else{S.lin.hp-=2;S.shelter.door=Math.max(0,S.shelter.door-2);ne.push("🔴 血月冲破防线！受伤")}
+  }else if(isRT(d)){
+    let press=(d-10)+S.shelter.noise+S.shelter.scent+S.shelter.light-S.shelter.door-S.shelter.def;
+    if(press<=3){S.lin.str+=1;ne.push("🌊 红潮没有突破")}
+    else if(press<=5){S.lin.str+=1;S.res.food=Math.max(0,S.res.food-1);S.shelter.door=Math.max(1,S.shelter.door-1);ne.push("🌊 红潮压过，门窗受损")}
+    else{S.lin.hp=Math.max(0,S.lin.hp-1);S.lin.str+=2;S.shelter.door=Math.max(0,S.shelter.door-1);ne.push("🌊 红潮冲入！受伤")}
+  }
+
+  if(d>=15){
+    S.demo_complete=true; S.reveal.unlocked=true; S.phase="reveal"; mode="reveal";
+    if(S.car.ready) ne.push("左前轮爆了。汽车滑进沟里。");
+    else ne.push("没有汽车。林行徒步走向保护区。");
+    S.ending=detEnding(); S.reveal.summary=endSummary();
+    addLog("🏁 Demo 结束。祁眠日志已解锁。","day");
+  }else{startDay(d+1);}
+
+  if(ne.length) addLog(`🌙 夜晚：${ne.join(" | ")}`,"");
+  renderAll();
+}
+
+function detEnding(){
+  if(S.lin.hp<=0||(S.lin.hg>=4&&S.lin.th>=4)||(S.shelter.door<=0&&S.lin.hp<=2)) return"collapsed";
+  if(S.lin.hp<=3||S.shelter.door<=1||S.lin.hg>=4||S.lin.th>=4) return"barely_reached_gate";
+  if(S.evac.sz&&S.evac.addr&&S.evac.car) return"reached_gate_quarantine";
+  return"barely_reached_gate";
+}
+function endSummary(){
+  let sp=S.shelter.preserve>0?"带着整理好的物资":"拖着伤痕累累的身体";
+  if(S.ending=="collapsed") return `林行没能稳定抵达保护区大门。最后的记忆是血月下翻倒的汽车。祁眠日志揭示：那一夜尸群中藏着改变路线的人。`;
+  return `林行${sp}通过初筛，被领到隔离棚。筛查棚外有人低声说——「昨晚那股尸群像被人牵走了。」祁眠藏身尸群改变路线——不是为了林行，却间接救下了他。`;
+}
+
+function resolveQimian(d){
+  if(d<5) return; S.qimian.awake=true;
+  if(d==8) S.qimian.ai.moto=2; if(d==12) S.qimian.ai.moto=3;
+  let pl=QP[d]; if(!pl) return;
+  for(let a of pl){
+    if(a.loc&&S.locs[a.loc]){S.locs[a.loc].qtrace=true; if(a.zd)S.locs[a.loc].zom=Math.max(0,S.locs[a.loc].zom+a.zd)}
+    if(a.rgain) for(let k in a.rgain) S.res[k]=(S.res[k]||0)+a.rgain[k];
+    S.qimian.clues.push(a.pub); S.qimian.log.push({day:d,title:a.t,truth:a.tr,ai:a.ai||"",sub:a.sub||""});
+  }
+}
+
+// ==================== CANVAS RENDERING ====================
+const canvas=document.getElementById("game");
+const ctx=canvas.getContext("2d");
+
+function resize(){
+  let view=document.getElementById("view");
+  viewW=view.clientWidth; viewH=view.clientHeight;
+  canvas.width=viewW; canvas.height=viewH;
+}
+window.addEventListener("resize",()=>{resize();renderAll()});
+
+// Color palette
+const CLR={bg:"#0d0d1a",node:"#1a1a3a",nodeSel:"#2a2a5a",path:"#223",text:"#ddd",accent:"#e94560",gold:"#da0",green:"#4a4",red:"#a33",blue:"#48a",dark:"#111",water:"#224466",road:"#333",building:"#1a1a2e",window:"#336",zombie:"#6a3",player:"#48a",blood:"#a22"};
+
+function drawMap(){
+  ctx.fillStyle=CLR.bg; ctx.fillRect(0,0,viewW,viewH);
+
+  // Background terrain
+  ctx.fillStyle="#222"; ctx.fillRect(0,0,viewW,viewH);
+  // Grid
+  ctx.strokeStyle="#1a1a2a"; ctx.lineWidth=1;
+  for(let i=0;i<viewW;i+=30) {ctx.beginPath();ctx.moveTo(i,0);ctx.lineTo(i,viewH);ctx.stroke()}
+  for(let i=0;i<viewH;i+=30) {ctx.beginPath();ctx.moveTo(0,i);ctx.lineTo(viewW,i);ctx.stroke()}
+
+  // Zones
+  let cx=viewW*0.5, cy=viewH*0.55;
+  // Near circle
+  ctx.strokeStyle="#223355"; ctx.lineWidth=2; ctx.setLineDash([8,4]);
+  ctx.beginPath(); ctx.arc(cx,cy,viewH*0.25,0,Math.PI*2); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle="#11223333"; ctx.fillText("近圈",cx+viewH*0.23,cy);
+  // Mid circle
+  ctx.beginPath(); ctx.arc(cx,cy,viewH*0.42,0,Math.PI*2); ctx.stroke();
+  ctx.fillText("中圈",cx+viewH*0.4,cy);
+  // Far circle
+  ctx.beginPath(); ctx.arc(cx,cy,viewH*0.58,0,Math.PI*2); ctx.stroke();
+
+  // Home base marker
+  let hx=viewW*0.78, hy=viewH*0.75;
+  ctx.fillStyle="#e9456033"; ctx.beginPath(); ctx.arc(hx,hy,22,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle=CLR.accent; ctx.font="12px 'Courier New'"; ctx.fillText("🏠 据点",hx-20,hy-28);
+
+  // Draw locations
+  for(let lid in S.locs){
+    let loc=S.locs[lid];
+    let x=loc.x*viewW, y=loc.y*viewH;
+    let reachable=loc.rz<=S.bike.range;
+
+    // Node circle
+    let r=loc.zom>=5?16:loc.zom>=3?13:10;
+    let nc=loc.visited?"#2a3a2a":(reachable?"#1a2a3a":"#2a1a1a");
+    if(loc.qtrace) nc="#2a2a1a";
+    ctx.fillStyle=nc; ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.fill();
+    ctx.strokeStyle=reachable?"#446":"#633"; ctx.lineWidth=2;
+    ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.stroke();
+
+    // Name
+    ctx.fillStyle=reachable?CLR.text:"#666"; ctx.font="bold 11px 'Courier New'";
+    ctx.fillText(loc.name,x-22,y-r-6);
+
+    // Danger dots
+    let dz=loc.zom;
+    for(let i=0;i<Math.min(dz,5);i++){
+      ctx.fillStyle=i<3?CLR.green:(i<4?CLR.gold:CLR.red);
+      ctx.beginPath(); ctx.arc(x-8+i*4,y+r+10,2.5,0,Math.PI*2); ctx.fill();
+    }
+
+    // Qimian trace
+    if(loc.qtrace){ctx.fillStyle=CLR.blue; ctx.font="14px sans-serif"; ctx.fillText("👤",x+10,y-10)}
+
+    // Line to center
+    ctx.strokeStyle=loc.visited?"#334":"#223"; ctx.lineWidth=1;
+    ctx.beginPath(); ctx.moveTo(x,y); ctx.lineTo(hx,hy); ctx.stroke();
+  }
+
+  // Safe zone marker
+  ctx.fillStyle="#44884466"; ctx.beginPath(); ctx.arc(viewW*0.15,viewH*0.2,30,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle="#4a4"; ctx.font="bold 12px 'Courier New'"; ctx.fillText("🏕️ 保护区",viewW*0.08,viewH*0.15);
+
+  // Day/phase overlay
+  let phaseName=S.phase=="morning"?"清晨":S.phase=="day"?"白天":S.phase=="evening"?"黄昏":S.phase=="night"?"夜晚":S.phase=="reveal"?"结局":"";
+  ctx.fillStyle="rgba(0,0,0,0.6)"; ctx.fillRect(8,8,200,36);
+  ctx.fillStyle=CLR.text; ctx.font="bold 14px 'Courier New'";
+  ctx.fillText(`第 ${S.day} 天 · ${phaseName}`,16,32);
+}
+
+function drawExplore(){
+  let loc=S.locs[exploreLoc]; if(!loc) return;
+  ctx.fillStyle=CLR.bg; ctx.fillRect(0,0,viewW,viewH);
+
+  // Building side-view
+  let bx=viewW*0.08, by=viewH*0.1, bw=viewW*0.84, bh=viewH*0.75;
+  // Building outline
+  ctx.fillStyle="#111122"; ctx.fillRect(bx,by,bw,bh);
+  ctx.strokeStyle="#334"; ctx.lineWidth=3; ctx.strokeRect(bx,by,bw,bh);
+  // Roof
+  ctx.fillStyle="#1a1a2e"; ctx.fillRect(bx,by-8,bw,10);
+
+  // Floor lines
+  let fh=bh/3;
+  for(let i=1;i<3;i++){ctx.strokeStyle="#1a1a3a";ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(bx,by+i*fh);ctx.lineTo(bx+bw,by+i*fh);ctx.stroke()}
+
+  // Rooms as segments
+  let rooms=Object.entries(loc.rooms);
+  let rw=bw/Math.max(rooms.length,1);
+
+  rooms.forEach(([rid,room],i)=>{
+    let rx=bx+i*rw+4, ry=by+8, rr=rw-8, rh=bh-16;
+    // Room bg
+    let bg=room.vis=="暗"?"#0a0a14":(room.vis=="昏"?"#111122":"#1a1a2e");
+    if(room.searched) bg="#0d1a0d";
+    ctx.fillStyle=bg; ctx.fillRect(rx,ry,rr,rh);
+    ctx.strokeStyle="#333"; ctx.lineWidth=1; ctx.strokeRect(rx,ry,rr,rh);
+
+    // Window
+    if(room.vis!="暗"){
+      ctx.fillStyle="#225"; ctx.fillRect(rx+rr*0.3,ry+8,rr*0.4,rh*0.15);
+      ctx.strokeStyle="#448"; ctx.strokeRect(rx+rr*0.3,ry+8,rr*0.4,rh*0.15);
+    }
+
+    // Door
+    ctx.fillStyle="#2a2a1a"; ctx.fillRect(rx+rr*0.35,ry+rh-22,rr*0.3,18);
+
+    // Room name
+    ctx.fillStyle=room.searched?"#464":CLR.text; ctx.font="bold 11px 'SimHei'";
+    ctx.fillText(room.name,rx+4,ry+rh-28);
+
+    // Zombies in room
+    if(room.zn>0 && !room.searched){
+      let zx=rx+rr*0.5, zy=ry+rh*0.45;
+      for(let z=0;z<Math.min(room.zn,3);z++){
+        let zox=zx+(z-1)*18, zoy=zy+(z%2)*12;
+        // Zombie body
+        ctx.fillStyle=CLR.zombie; ctx.fillRect(zox-5,zoy-8,10,14);
+        ctx.fillStyle="#444"; ctx.fillRect(zox-3,zoy-10,6,6);
+        // Eyes
+        ctx.fillStyle=CLR.red; ctx.fillRect(zox-3,zoy-9,2,3); ctx.fillRect(zox+1,zoy-9,2,3);
+        if(S.exp.lured.includes(rid)){
+          ctx.fillStyle="#ff06"; ctx.font="10px sans-serif"; ctx.fillText("→→→",zox-20,zoy-4);
+        }
+      }
+    } else if(room.zn>0 && S.exp.lured.includes(rid)){
+      ctx.fillStyle="#464"; ctx.font="10px 'Courier New'"; ctx.fillText("(已引开)",rx+rr*0.2,ry+rh*0.5);
+    }
+
+    // Searched mark
+    if(room.searched){
+      ctx.fillStyle="#0a06"; ctx.font="28px sans-serif"; ctx.fillText("✓",rx+rr*0.4,ry+rh*0.3);
+    }
+
+    // Locked
+    if(room.locked){
+      ctx.fillStyle="#a33"; ctx.font="24px sans-serif"; ctx.fillText("🔒",rx+rr*0.35,ry+rh*0.4);
+    }
+  });
+
+  // Player at entrance
+  let px=bx-30, py=by+bh*0.85;
+  ctx.fillStyle=CLR.player; ctx.fillRect(px-4,py-10,8,16);
+  ctx.fillStyle="#aaf"; ctx.fillRect(px-3,py-12,6,6);
+  ctx.fillStyle=CLR.text; ctx.font="10px 'SimHei'"; ctx.fillText("林行",px-18,py-16);
+
+  // Info overlay
+  ctx.fillStyle="rgba(0,0,0,0.7)"; ctx.fillRect(8,8,220,55);
+  ctx.fillStyle=CLR.text; ctx.font="11px 'Courier New'";
+  ctx.fillText(`🏠 ${loc.name} [${loc.r}圈]`,14,26);
+  ctx.fillText(`⏱ ${S.exp.tused}/${S.exp.tlim}  | 🔊 ${S.exp.noise}  | 🧟 ${loc.zom}`,14,44);
+  ctx.fillText(`💡 ${rooms.filter(([_,r])=>!r.searched).length}间可搜`,14,60);
+}
+
+function drawShelter(){
+  ctx.fillStyle=CLR.bg; ctx.fillRect(0,0,viewW,viewH);
+
+  // Shelter cross-section
+  let sx=viewW*0.15, sy=viewH*0.05, sw=viewW*0.7, sh=viewH*0.7;
+  // Building
+  ctx.fillStyle="#151520"; ctx.fillRect(sx,sy,sw,sh);
+  ctx.strokeStyle="#334"; ctx.lineWidth=2; ctx.strokeRect(sx,sy,sw,sh);
+  // Roof
+  ctx.fillStyle="#1a1a2e"; ctx.fillRect(sx,sy-12,sw,14);
+  // Floor
+  ctx.fillStyle="#222"; ctx.fillRect(sx,sy+sh-8,sw,10);
+
+  // Facilities
+  let fx=sx+20, fy=sy+40;
+  let facs=["bed","workbench","barricade","radio","storage"];
+  let ficons={bed:"🛏️",workbench:"🔧",barricade:"🪟",radio:"📻",storage:"📦"};
+  let flabels={bed:"床铺",workbench:"工作台",barricade:"封窗",radio:"收音机",storage:"整理台"};
+  let fw=(sw-40)/5;
+
+  facs.forEach((fid,i)=>{
+    let x=fx+i*fw, y=fy;
+    ctx.fillStyle="#1a1a2e"; ctx.fillRect(x,y,fw-8,sh-100);
+    ctx.strokeStyle="#333"; ctx.strokeRect(x,y,fw-8,sh-100);
+    ctx.fillStyle=CLR.text; ctx.font="20px sans-serif"; ctx.fillText(ficons[fid],x+fw*0.25,y+30);
+    ctx.fillText(flabels[fid],x+fw*0.1,y+60);
+  });
+
+  // Door
+  ctx.fillStyle=(S.shelter.door>=3?"#3a3":(S.shelter.door>=1?"#aa3":"#a33"));
+  ctx.fillRect(sx-16,sy+sh*0.6,14,sh*0.3);
+  ctx.fillStyle=CLR.text; ctx.font="10px 'SimHei'"; ctx.fillText(`门:${S.shelter.door}`,sx-14,sy+sh*0.97);
+
+  // Status bars at bottom
+  let stx=sx, sty=sy+sh+30;
+  let stats=[["防御",S.shelter.def,4,"#48a"],["噪音",S.shelter.noise,6,"#a84"],["气味",S.shelter.scent,6,"#8a4"],["光源",S.shelter.light,6,"#aa4"]];
+  stats.forEach(([n,v,mx,cl],i)=>{
+    ctx.fillStyle=CLR.text; ctx.font="11px 'Courier New'"; ctx.fillText(n,stx+i*120,sty);
+    ctx.fillStyle="#222"; ctx.fillRect(stx+i*120+32,sty-9,60,10);
+    ctx.fillStyle=cl; ctx.fillRect(stx+i*120+32,sty-9,60*Math.min(v,mx)/mx,10);
+  });
+}
+
+function drawReveal(){
+  ctx.fillStyle=CLR.bg; ctx.fillRect(0,0,viewW,viewH);
+  // Blood moon background
+  let grd=ctx.createRadialGradient(viewW*0.5,viewH*0.3,50,viewW*0.5,viewH*0.3,viewW);
+  grd.addColorStop(0,"#e9456033"); grd.addColorStop(1,"#0d0d1a");
+  ctx.fillStyle=grd; ctx.fillRect(0,0,viewW,viewH);
+  // Moon
+  ctx.fillStyle="#e94560"; ctx.beginPath(); ctx.arc(viewW*0.5,viewH*0.3,40,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle=CLR.text; ctx.font="bold 18px 'Courier New'"; ctx.textAlign="center";
+  ctx.fillText(`═══ 祁眠行动日志 · 一周目回放 ═══`,viewW*0.5,viewH*0.5);
+  ctx.font="14px 'Courier New'"; ctx.fillText(`结局：${S.ending}`,viewW*0.5,viewH*0.55);
+  ctx.fillText(`共 ${S.qimian.log.length} 条隐藏行动`,viewW*0.5,viewH*0.6);
+  ctx.textAlign="start";
+
+  // Draw Qimian silhouette
+  ctx.fillStyle="#334466"; ctx.beginPath();
+  ctx.arc(viewW*0.5,viewH*0.7,25,Math.PI,0); ctx.fill();
+  ctx.fillRect(viewW*0.5-25,viewH*0.7,50,40);
+  // Motorcycle
+  ctx.fillStyle="#555"; ctx.fillRect(viewW*0.5-30,viewH*0.78,60,12);
+  ctx.fillStyle="#333"; ctx.beginPath(); ctx.arc(viewW*0.5-28,viewH*0.9,8,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(viewW*0.5+28,viewH*0.9,8,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle=CLR.text; ctx.font="11px 'SimHei'"; ctx.fillText("祁眠",viewW*0.5-15,viewH*0.97);
+}
+
+function renderAll(){
+  resize();
+  if(mode=="explore") drawExplore();
+  else if(mode=="reveal") drawReveal();
+  else drawMap();
+  drawUI();
+}
+
+function drawUI(){
+  // Stats panel
+  let infL=S.lin.inf>=5?"🔴危险":S.lin.inf>=3?"🟡发热":"🟢低";
+  document.getElementById("day-phase").innerHTML = `<span class="phase-tag phase-${S.phase}">${S.phase=="morning"?"清晨":S.phase=="day"?"白天":S.phase=="searching"?"搜索":S.phase=="evening"?"黄昏":S.phase=="night"?"夜晚":"回放"}</span>`;
+
+  document.getElementById("stats").innerHTML = `
+    <div class="stat-row"><span>❤️</span><div class="stat-bar"><div class="stat-fill" style="width:${S.lin.hp*10}%;background:#e94560"></div></div><span>${S.lin.hp}</span></div>
+    <div class="stat-row"><span>😫</span><div class="stat-bar"><div class="stat-fill" style="width:${S.lin.fat*10}%;background:#aa8"></div></div><span>${S.lin.fat}</span></div>
+    <div class="stat-row"><span>😰</span><div class="stat-bar"><div class="stat-fill" style="width:${S.lin.str*10}%;background:#a6a"></div></div><span>${S.lin.str}</span></div>
+    <div class="stat-row"><span>🦠</span><div class="stat-bar"><div class="stat-fill" style="width:${S.lin.inf*10}%;background:#6a6"></div></div><span>${infL}</span></div>
+    <div class="stat-row"><span>⭐</span><div class="stat-bar"><div class="stat-fill" style="width:${S.lin.hope*20}%;background:#da0"></div></div><span>${S.lin.hope}</span></div>
+    <small>撤离：📻${S.evac.sz?"✅":"❌"} 📍${S.evac.addr?"✅":"❌"} 🚗${S.evac.car?"✅":"❌"}</small>
+  `;
+  document.getElementById("resources").innerHTML = `
+    🍞${S.res.food} 💧${S.res.water} 💊${S.res.meds}<br>
+    🧱${S.res.materials} 🔧${S.res.parts} ⛽${S.res.fuel}<br>
+    <small>零件：🔋${S.cp.battery||0} 🛢️${S.cp.gasoline||0} 🛞${S.cp.tire||0}</small><br>
+    <small>修理：${S.car.s1?"⚡":""}${S.car.s2?"🛞":""}${S.car.s3?"🔋":""}${S.car.s4?"⛽":""}${S.car.ready?" ✅":""}</small>
+  `;
+  document.getElementById("shelter-stats").innerHTML = `
+    🚪${S.shelter.door} 🔊${S.shelter.noise} 👃${S.shelter.scent}<br>
+    💡${S.shelter.light} 🛡️${S.shelter.def}<br>
+    🚲 耐久${S.bike.dur} 范围${S.bike.range}
+  `;
+
+  // Actions
+  let ahtml="";
+  if(S.phase=="searching" && exploreLoc){
+    let loc=S.locs[exploreLoc];
+    ahtml=`<div style="font-size:11px;color:#aa8;margin-bottom:4px">🏠 ${loc.name} | ⏱${S.exp.tused}/${S.exp.tlim} | 🔊${S.exp.noise}</div>`;
+    for(let rid in loc.rooms){
+      let r=loc.rooms[rid];
+      if(r.searched) continue;
+      let zn=r.zn>0?(S.exp.lured.includes(rid)?"🟢已引":"🔴尸"+r.zn):"🟢";
+      ahtml+=`<div style="font-size:11px;margin:2px 0">${r.locked?"🔒":""}${r.name} ${r.vis} ${zn}</div>`;
+      if(!r.locked){
+        ahtml+=`<button class="btn action" onclick="searchRoom('${rid}','careful')">🔍 谨慎搜索 (${r.time}h)</button>`;
+        ahtml+=`<button class="btn" onclick="searchRoom('${rid}','quick')">⚡ 快速搜索 (${Math.max(1,r.time-1)}h)</button>`;
+        if(r.zn>0&&!S.exp.lured.includes(rid)) ahtml+=`<button class="btn danger" onclick="lureRoom('${rid}')">📢 引开尸群 (+1h)</button>`;
+      }
+    }
+    ahtml+=`<button class="btn gold" onclick="leaveExplore()">🚶 离开 → 回据点</button>`;
+  } else if(!S.demo_complete){
+    let acts=[["rest","🛏️ 休息"],["repair","🔧 修自行车"],["barricade","🪟 封窗(建材-2)"],["radio","📻 听广播(燃料-1)"],["organize","📦 整理物资"],["treat","💊 处理伤口(药-1)"]];
+    if(S.car.found&&!S.car.ready) acts.push(["car","🚗 修理汽车"]);
+    acts.push(["fortify","🛡️ 加固(建材-2)"],["quiet","🤫 降噪"],["mask","🫙 遮味(建材-1)"]);
+    for(let[id,lb] of acts){
+      let dis=["evening","night"].includes(S.phase)?"":"disabled";
+      ahtml+=`<button class="btn action" onclick="shelterAct('${id}')" ${dis}>${lb}</button>`;
+    }
+    ahtml+=`<button class="btn gold" onclick="sleepNight()" ${["evening","night"].includes(S.phase)?"":"disabled"}>😴 睡觉结算夜晚</button>`;
+  }
+  if(S.reveal.unlocked) ahtml+=`<div style="color:#e94560;margin-top:8px">⬅ 结局回放已解锁</div>`;
+  document.getElementById("actions").innerHTML = ahtml;
+}
+
+function addLog(msg,cls=""){
+  S.logLines.push({msg,cls,time:Date.now()});
+  if(S.logLines.length>80) S.logLines.shift();
+  let el=document.getElementById("log");
+  let html="";
+  for(let l of S.logLines.slice(-40)) html+=`<span class="${l.cls}">${l.msg}</span><br>`;
+  el.innerHTML=html; el.scrollTop=el.scrollHeight;
+}
+
+// Auto-play
+const SAFE={1:"home",2:"convenience",3:"clinic",4:"bike_shop",5:"bike_shop",6:"police",7:"school",8:"supermarket",9:"bridge_camp",10:"gas_station",11:"hardware",12:"subway",13:"apartment",14:"quarantine",15:"safezone"};
+let autoIdx=0, autoTimer=null;
+
+function autoPlayDay(){
+  let d=S.day; if(S.demo_complete||d>15){clearInterval(autoTimer); autoTimer=null; return}
+  startDay(d);
+  let lid=SAFE[d]||"safezone";
+  enterLoc(lid);
+  if(S.phase!="searching"){nightAuto(); return}
+  let loc=S.locs[lid], cnt=0;
+  for(let rid in loc.rooms){if(cnt>=3)break;let r=loc.rooms[rid];if(r.searched||r.locked)continue;if(r.zn>0)lureRoom(rid);searchRoom(rid,"careful");cnt++}
+  leaveExplore();
+  nightAuto();
+}
+function nightAuto(){
+  let d=S.day;
+  if([10,12,13,14].includes(d)) shelterAct("car");
+  else if(isBM(d)) shelterAct("fortify");
+  else if(d%3==0) shelterAct("radio");
+  else if(d%2==0) shelterAct("repair");
+  else shelterAct("rest");
+  sleepNight();
+}
+function autoPlayFull(){
+  if(autoTimer) clearInterval(autoTimer);
+  newGame();
+  autoTimer=setInterval(()=>{if(S.demo_complete) clearInterval(autoTimer); else autoPlayDay()},600);
+}
+
+// Click on map
+canvas.addEventListener("click",(e)=>{
+  if(mode!="map"||S.demo_complete||!["morning","day"].includes(S.phase)) return;
+  let rect=canvas.getBoundingClientRect();
+  let mx=e.clientX-rect.left, my=e.clientY-rect.top;
+  for(let lid in S.locs){
+    let loc=S.locs[lid];
+    let x=loc.x*viewW, y=loc.y*viewH;
+    let dist=Math.sqrt((mx-x)**2+(my-y)**2);
+    if(dist<25){enterLoc(lid); return}
+  }
+});
+
+// Init
+resize();
+newGame();
+renderAll();
+</script>
+</body>
+</html>

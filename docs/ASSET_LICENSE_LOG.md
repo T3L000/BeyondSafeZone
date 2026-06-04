@@ -1,6 +1,6 @@
-# Asset License Log
+﻿# Asset License Log
 
-更新日期：2026-05-21
+更新日期：2026-05-27
 
 本文件记录《保护区之外》所有外部、AI 生成或手工修改素材的来源和授权。没有记录的素材不得进入公开参赛包。
 
@@ -16,7 +16,12 @@
 
 | Asset ID | Project Path | Source Path | Source URL / Tool | Author | License | Commercial Use | Attribution Required | Modified | Contest Status | Notes |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| example_char_chenxing | assets/sprites/characters/char_chenxing_idle_32x32.png | assets/source/characters/char_chenxing.aseprite | Original / manual | Project team | Original | Yes | No | Yes | Approved | Example row; replace when real asset exists. |
+| char_linxing_all | assets/sprites/characters/char_linxing_*.png | — | Python 脚本生成占位色块 | Project team | Original | Yes | No | — | Prototype Only | 纯色块占位，比赛前需替换为真实像素素材 |
+| char_qimian_all | assets/sprites/characters/char_qimian_*.png | — | Python 脚本生成占位色块 | Project team | Original | Yes | No | — | Prototype Only | 纯色块占位，比赛前需替换为真实像素素材 |
+| enemy_zombie_all | assets/sprites/enemies/enemy_zombie_*.png | — | Python 脚本生成占位色块 | Project team | Original | Yes | No | — | Prototype Only | 纯色块占位，比赛前需替换为真实像素素材 |
+| enemy_blood_zombie_all | assets/sprites/enemies/enemy_blood_zombie_*.png | — | Python 脚本生成占位色块 | Project team | Original | Yes | No | — | Prototype Only | 纯色块占位，比赛前需替换为真实像素素材 |
+| ui_icons_all | assets/sprites/ui/ui_icon_*.png | — | Python 脚本生成占位色块 | Project team | Original | Yes | No | — | Prototype Only | 纯色块占位，比赛前需替换为真实像素素材 |
+| tilesets_all | assets/sprites/tilesets/tileset_*.png | — | Python 脚本生成占位色块 | Project team | Original | Yes | No | — | Prototype Only | 纯色块占位，比赛前需替换为真实像素素材 |
 
 ## Status Values
 

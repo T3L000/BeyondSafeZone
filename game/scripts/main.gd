@@ -1,53 +1,71 @@
-extends Control
+﻿extends Control
 
-const Simulation = preload("res://scripts/core/game_simulation.gd")
+const UILabels = preload("res://scripts/view/labels.gd")
+const _GameState = preload("res://scripts/model/game_state.gd")
+const NodeMapView = preload("res://scripts/view/node_map_view.gd")
+const ExplorerView = preload("res://scripts/view/explorer_view.gd")
+const ShelterPanel = preload("res://scripts/view/shelter_panel.gd")
 
-var sim = Simulation.new()
+var manager: Node
+
+# Visual views
+var node_map: NodeMapView
+var explorer_view: ExplorerView
+var shelter_panel: ShelterPanel
+
+# Text widgets
 var status_label: Label
-var day_context_label: RichTextLabel
 var stats_label: Label
 var resources_label: Label
-var shelter_label: Label
-var location_box: VBoxContainer
 var action_box: VBoxContainer
 var event_log: RichTextLabel
+var middle_section: Control  # container that swaps between map and explorer
+var right_section: Control
 
 func _ready() -> void:
-	sim.new_game()
+	manager = Node.new()
+	manager.set_script(preload("res://scripts/managers/game_manager.gd"))
+	add_child(manager)
+	manager.state_changed.connect(_on_state_changed)
 	_build_ui()
+	_refresh()
+
+func _on_state_changed() -> void:
 	_refresh()
 
 func _build_ui() -> void:
 	var root := VBoxContainer.new()
 	root.set_anchors_preset(Control.PRESET_FULL_RECT)
-	root.add_theme_constant_override("separation", 10)
-	root.offset_left = 18
-	root.offset_top = 18
-	root.offset_right = -18
-	root.offset_bottom = -18
+	root.add_theme_constant_override("separation", 8)
+	root.offset_left = 12
+	root.offset_top = 10
+	root.offset_right = -12
+	root.offset_bottom = -10
 	add_child(root)
 
+	# Title
 	var title := Label.new()
-	title.text = "保护区之外 / Beyond Safe Zone - Greybox Demo"
-	title.add_theme_font_size_override("font_size", 28)
+	title.text = "保护区之外 / Beyond Safe Zone — 灰盒演示"
+	title.add_theme_font_size_override("font_size", 24)
+	title.add_theme_color_override("font_color", Color.CRIMSON)
 	root.add_child(title)
 
+	# Status bar
 	status_label = Label.new()
 	status_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	status_label.custom_minimum_size = Vector2(0, 50)
 	root.add_child(status_label)
 
-	day_context_label = RichTextLabel.new()
-	day_context_label.fit_content = true
-	day_context_label.custom_minimum_size = Vector2(0, 92)
-	day_context_label.bbcode_enabled = true
-	root.add_child(day_context_label)
-
+	# Three-column layout
 	var columns := HBoxContainer.new()
-	columns.add_theme_constant_override("separation", 16)
+	columns.add_theme_constant_override("separation", 10)
+	columns.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	root.add_child(columns)
 
+	# LEFT: Stats + Resources + Shelter
 	var left := VBoxContainer.new()
-	left.custom_minimum_size = Vector2(360, 0)
+	left.custom_minimum_size = Vector2(280, 0)
+	left.add_theme_constant_override("separation", 6)
 	columns.add_child(left)
 
 	stats_label = Label.new()
@@ -58,312 +76,225 @@ func _build_ui() -> void:
 	resources_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	left.add_child(resources_label)
 
-	shelter_label = Label.new()
-	shelter_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	left.add_child(shelter_label)
+	shelter_panel = ShelterPanel.new()
+	shelter_panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	shelter_panel.custom_minimum_size = Vector2(0, 280)
+	left.add_child(shelter_panel)
 
-	var middle := VBoxContainer.new()
-	middle.custom_minimum_size = Vector2(380, 0)
-	columns.add_child(middle)
+	# MIDDLE: NodeMap or Explorer (swapped dynamically)
+	middle_section = Control.new()
+	middle_section.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	middle_section.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	middle_section.custom_minimum_size = Vector2(420, 300)
+	columns.add_child(middle_section)
 
-	var location_title := Label.new()
-	location_title.text = "节点式大地图 / 白天探索"
-	location_title.add_theme_font_size_override("font_size", 20)
-	middle.add_child(location_title)
+	# Node map view (default)
+	node_map = NodeMapView.new()
+	node_map.set_anchors_preset(Control.PRESET_FULL_RECT)
+	node_map.setup(null, null, func(lid: String): manager.on_explore(lid))
+	middle_section.add_child(node_map)
 
-	location_box = VBoxContainer.new()
-	middle.add_child(location_box)
+	# Explorer view (hidden initially)
+	explorer_view = ExplorerView.new()
+	explorer_view.set_anchors_preset(Control.PRESET_FULL_RECT)
+	explorer_view.setup(null, func(rid, tac): manager.on_search_room(rid, tac), func(rid): manager.on_lure_room(rid), func(): manager.on_leave_exploration())
+	explorer_view.visible = false
+	middle_section.add_child(explorer_view)
 
-	var right := VBoxContainer.new()
-	right.custom_minimum_size = Vector2(380, 0)
-	columns.add_child(right)
+	# RIGHT: Action buttons
+	right_section = VBoxContainer.new()
+	right_section.custom_minimum_size = Vector2(200, 0)
+	right_section.add_theme_constant_override("separation", 4)
+	columns.add_child(right_section)
 
-	var action_title := Label.new()
-	action_title.text = "夜晚经营"
-	action_title.add_theme_font_size_override("font_size", 20)
-	right.add_child(action_title)
+	var action_label := Label.new()
+	action_label.text = "操作"
+	action_label.add_theme_font_size_override("font_size", 16)
+	action_label.add_theme_color_override("font_color", Color.CRIMSON)
+	right_section.add_child(action_label)
 
 	action_box = VBoxContainer.new()
-	right.add_child(action_box)
+	action_box.add_theme_constant_override("separation", 3)
+	action_box.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	right_section.add_child(action_box)
 
+	# Event log at bottom
 	event_log = RichTextLabel.new()
-	event_log.fit_content = true
-	event_log.custom_minimum_size = Vector2(0, 220)
+	event_log.custom_minimum_size = Vector2(0, 170)
 	event_log.bbcode_enabled = true
+	event_log.scroll_following = true
 	root.add_child(event_log)
 
 func _refresh() -> void:
-	var state: Dictionary = sim.state
-	status_label.text = "第 %d 天 / 阶段：%s / 目标：%s\n%s" % [
-		state.day,
-		_phase_label(state.phase),
-		state.goal,
-		state.last_event
+	var state: _GameState = manager.get_state()
+	var sim: RefCounted = manager.get_sim()
+
+	# Status bar
+	status_label.text = "%s\n%s  |  %s" % [
+		state.last_event,
+		"第 %d 天  %s  目标：%s" % [int(state.day), UILabels.phase_label(str(state.phase)), state.goal],
+		_build_short_context(state),
 	]
-	day_context_label.text = _build_day_context_text(state)
-	stats_label.text = "林行：%s\n撤离：广播 %s  地址 %s  自行车 %s" % [
+
+	# Left panel stats
+	stats_label.text = "🧑 林行：%s\n撤离：📻%s 📍%s 🚗%s\n零件：🔋%d 🛢️%d 🛞%d | 修理：%s" % [
 		sim.get_lin_condition_text(),
-		_flag_label(state.evacuation.safezone_confirmed),
-		_flag_label(state.evacuation.address_known),
-		_flag_label(state.evacuation.bike_ready)
+		UILabels.flag_label(state.evacuation.safezone_confirmed),
+		UILabels.flag_label(state.evacuation.address_known),
+		UILabels.flag_label(state.evacuation.car_ready),
+		int(state.car_parts.battery), int(state.car_parts.gasoline), int(state.car_parts.tire),
+		UILabels.car_step_label(state.car),
 	]
-	resources_label.text = "资源：食物 %d  水 %d  药 %d  建材 %d  零件 %d  燃料 %d" % [
-		state.resources.food,
-		state.resources.water,
-		state.resources.meds,
-		state.resources.materials,
-		state.resources.parts,
-		state.resources.fuel
+
+	resources_label.text = "🍞%d 💧%d 💊%d  🧱%d 🔧%d ⛽%d" % [
+		int(state.resources.food), int(state.resources.water), int(state.resources.meds),
+		int(state.resources.materials), int(state.resources.parts), int(state.resources.fuel),
 	]
-	shelter_label.text = "据点：门窗 %d  噪音 %d  气味 %d  光源 %d  防御 %d  整理 %d\n自行车：耐久 %d  范围 %d  载重 %d\n设施：%s" % [
-		state.shelter.door,
-		state.shelter.noise,
-		state.shelter.scent,
-		state.shelter.light,
-		state.shelter.defense,
-		state.shelter.supply_preservation,
-		state.bike.durability,
-		state.bike.range,
-		state.bike.capacity,
-		_facility_summary(state.shelter.facilities)
-	]
-	_rebuild_location_buttons()
-	_rebuild_action_buttons()
+
+	# Shelter panel
+	shelter_panel.setup(state)
+
+	# Swap middle section based on phase
+	var is_searching := str(state.phase) == "searching"
+	node_map.visible = not is_searching
+	explorer_view.visible = is_searching
+
+	if is_searching:
+		explorer_view.setup(state,
+			func(rid, tac): manager.on_search_room(rid, tac),
+			func(rid): manager.on_lure_room(rid),
+			func(): manager.on_leave_exploration()
+		)
+	else:
+		node_map.setup(state, sim, func(lid: String): manager.on_explore(lid))
+
+	# Action buttons
+	_refresh_action_buttons()
+
+	# Event log
 	_refresh_log()
 
-func _rebuild_location_buttons() -> void:
-	for child in location_box.get_children():
-		child.queue_free()
-	for location_id in sim.get_location_ids():
-		var button := Button.new()
-		var location: Dictionary = sim.state.locations[location_id]
-		var disabled_reason := ""
-		if sim.state.demo_complete:
-			disabled_reason = "Demo 已结束"
-		elif sim.state.phase not in ["morning", "day"]:
-			disabled_reason = "只能白天探索"
-		elif int(location.range) > int(sim.state.bike.range):
-			disabled_reason = "太远：自行车范围 %d/%d" % [int(sim.state.bike.range), int(location.range)]
-		button.text = sim.get_location_card_text(location_id)
-		if disabled_reason != "":
-			button.text = "%s\n（%s）" % [button.text, disabled_reason]
-		button.disabled = disabled_reason != ""
-		button.pressed.connect(func() -> void:
-			sim.enter_location(location_id)
-			_refresh()
-		)
-		location_box.add_child(button)
-
-func _rebuild_action_buttons() -> void:
+func _refresh_action_buttons() -> void:
 	for child in action_box.get_children():
 		child.queue_free()
-	if sim.state.phase == "searching":
-		_rebuild_room_search_buttons()
+	var state: _GameState = manager.get_state()
+
+	if state.demo_complete:
+		var label := Label.new()
+		label.text = "Demo 结束\n祁眠日志已解锁"
+		label.add_theme_color_override("font_color", Color.CRIMSON)
+		action_box.add_child(label)
+		_add_restart_button()
 		return
-	var actions := {
-		"rest_bed": "床铺：休息降疲劳/压力",
-		"workbench_repair": "工作台：修车（零件-1）",
-		"barricade_windows": "封窗：加固防线（建材-2）",
-		"radio_broadcast": "收音机：听广播（燃料-1）",
-		"organize_storage": "整理台：打包物资",
-		"treat_wound": "处理伤口（药品-1）",
-		"quiet": "降低噪音",
-		"mask_scent": "遮蔽气味（建材-1）"
-	}
-	for action_id in actions.keys():
-		var button := Button.new()
-		button.text = actions[action_id]
-		var disabled_reason := ""
-		if sim.state.demo_complete:
-			disabled_reason = "Demo 已结束"
-		elif sim.state.phase not in ["evening", "night"]:
-			disabled_reason = "等待白天探索结束"
-		if disabled_reason != "":
-			button.text = "%s\n（%s）" % [button.text, disabled_reason]
-		button.disabled = disabled_reason != ""
-		button.pressed.connect(func() -> void:
-			sim.perform_shelter_action(action_id)
-			_refresh()
-		)
-		action_box.add_child(button)
 
-	var sleep_button := Button.new()
-	sleep_button.text = "睡觉并结算夜晚"
-	var sleep_disabled_reason := ""
-	if sim.state.demo_complete:
-		sleep_disabled_reason = "Demo 已结束"
-	elif sim.state.phase not in ["evening", "night"]:
-		sleep_disabled_reason = "需要先完成白天探索"
-	if sleep_disabled_reason != "":
-		sleep_button.text = "%s\n（%s）" % [sleep_button.text, sleep_disabled_reason]
-	sleep_button.disabled = sleep_disabled_reason != ""
-	sleep_button.pressed.connect(func() -> void:
-		sim.sleep_and_resolve_night()
-		_refresh()
-	)
-	action_box.add_child(sleep_button)
+	if str(state.phase) == "searching":
+		# During exploration: show a tip, the explorer view handles clicks
+		var tip := Label.new()
+		tip.text = "👆 点击房间进行搜索\n暗房 → 先引开尸群\n搜完 → 点击离开"
+		tip.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		action_box.add_child(tip)
+		return
 
-	var restart_button := Button.new()
-	restart_button.text = "重新开始"
-	restart_button.pressed.connect(func() -> void:
-		sim.new_game()
-		_refresh()
-	)
-	action_box.add_child(restart_button)
-
-func _rebuild_room_search_buttons() -> void:
-	var location_id := str(sim.state.exploration.active_location)
-	var location: Dictionary = sim.state.locations[location_id]
-	var header := Label.new()
-	header.text = "室内搜索：%s  时间 %d/%d  噪音 %d\n%s" % [
-		location.name,
-		int(sim.state.exploration.time_used),
-		int(sim.state.exploration.time_limit),
-		int(sim.state.exploration.noise),
-		sim.get_lin_condition_text()
+	# During evening/night: show shelter actions
+	var phase_ok := str(state.phase) in ["evening", "night"]
+	var act_data := [
+		["rest_bed", "🛏️ 休息"],
+		["workbench_repair", "🔧 修自行车"],
+		["barricade_windows", "🪟 封窗(建材-2)"],
+		["radio_broadcast", "📻 听广播(燃料-1)"],
+		["organize_storage", "📦 整理物资"],
+		["treat_wound", "💊 处理伤口"],
+		["workbench_car", "🚗 修理汽车"],
+		["fortify", "🛡️ 加固(建材-2)"],
+		["quiet", "🤫 降低噪音"],
+		["mask_scent", "🫙 遮蔽气味"],
 	]
-	header.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	action_box.add_child(header)
 
-	for room_id in location.rooms.keys():
-		var room_label := Label.new()
-		room_label.text = sim.get_room_card_text(room_id)
-		room_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		action_box.add_child(room_label)
+	for pair in act_data:
+		var action_id: String = pair[0]
+		var btn_label: String = pair[1]
+		var btn := Button.new()
+		btn.text = btn_label
+		if not phase_ok:
+			btn.disabled = true
+			btn.text += " (等待夜晚)"
+		if action_id == "workbench_car" and not (bool(state.car.found) and not bool(state.car.ready)):
+			continue
+		btn.pressed.connect(func(): manager.on_shelter_action(action_id))
+		action_box.add_child(btn)
 
-		var search_button := Button.new()
-		search_button.text = "谨慎搜索：%s" % location.rooms[room_id].name
-		search_button.disabled = bool(location.rooms[room_id].searched)
-		search_button.pressed.connect(func() -> void:
-			sim.search_room(room_id, "careful")
-			_refresh()
-		)
-		action_box.add_child(search_button)
+	# Sleep button
+	var sleep_btn := Button.new()
+	sleep_btn.text = "😴 睡觉结算夜晚" if phase_ok else "😴 (等待夜晚)"
+	sleep_btn.disabled = not phase_ok
+	sleep_btn.pressed.connect(func(): manager.on_sleep())
+	action_box.add_child(sleep_btn)
 
-		var quick_button := Button.new()
-		quick_button.text = "快速搜索：%s" % location.rooms[room_id].name
-		quick_button.disabled = bool(location.rooms[room_id].searched)
-		quick_button.pressed.connect(func() -> void:
-			sim.search_room(room_id, "quick")
-			_refresh()
-		)
-		action_box.add_child(quick_button)
+	_add_restart_button()
 
-		var lure_button := Button.new()
-		lure_button.text = "制造噪音：%s" % location.rooms[room_id].name
-		lure_button.disabled = bool(location.rooms[room_id].searched)
-		lure_button.pressed.connect(func() -> void:
-			sim.lure_room(room_id)
-			_refresh()
-		)
-		action_box.add_child(lure_button)
+func _add_restart_button() -> void:
+	var btn := Button.new()
+	btn.text = "🔄 重新开始"
+	btn.pressed.connect(func(): manager.start_new_game())
+	action_box.add_child(btn)
 
-	var leave_button := Button.new()
-	leave_button.text = "离开地点，回到据点"
-	leave_button.pressed.connect(func() -> void:
-		sim.leave_exploration()
-		_refresh()
-	)
-	action_box.add_child(leave_button)
+func _build_short_context(state: _GameState) -> String:
+	var ctx: Dictionary = state.morning_context
+	var parts := []
+	parts.append("态势：%s" % UILabels.pressure_label(str(ctx.get("pressure_type", ""))))
+	var warn := str(ctx.get("blood_moon_warning", ""))
+	if warn != "":
+		parts.append("[color=red]%s[/color]" % warn)
+	if state.demo_complete:
+		parts.append("[b]结局：%s[/b]" % UILabels.ending_label(str(state.ending_state)))
+	return " | ".join(parts)
 
 func _refresh_log() -> void:
+	var state: _GameState = manager.get_state()
 	var lines := []
+
 	lines.append("[b]普通事件[/b]")
-	lines.append(sim.state.last_event)
+	lines.append(state.last_event)
 	lines.append("")
+
 	lines.append("[b]祁眠异常线索[/b]")
-	if sim.state.qimian.public_clues.is_empty():
+	if state.qimian.public_clues.is_empty():
 		lines.append("暂时没有。")
 	else:
-		for clue in sim.state.qimian.public_clues:
+		for clue in state.qimian.public_clues:
 			lines.append("- %s" % clue)
 
-	if sim.state.reveal.unlocked:
+	if state.reveal.unlocked:
 		lines.append("")
-		lines.append("[b]祁眠行动日志[/b]")
-		lines.append("结局：%s" % _ending_label(sim.state.ending_state))
-		lines.append(sim.state.reveal.summary)
-		for entry in sim.state.qimian.log:
-			lines.append("第 %d 天：%s - %s" % [entry.day, entry.title, entry.truth])
+		lines.append("[b]═══ 祁眠行动日志 · 一周目回放 ═══[/b]")
+		lines.append("结局：%s" % UILabels.ending_label(state.ending_state))
+		lines.append(state.reveal.summary)
+		lines.append("")
+		lines.append("[b]▸ 祁眠人格卡[/b]")
+		lines.append("主目标：%s | 暴露：%s | 道德：%s" % [
+			state.qimian.personality_card.main_goal,
+			state.qimian.personality_card.exposure,
+			state.qimian.personality_card.moral_rule,
+		])
+		lines.append("")
+		lines.append("[b]▸ AI 运行状态[/b]")
+		lines.append("暴露值：%d/10 | 摩托：Lv.%d | 祁烬线索：%d/3" % [
+			int(state.qimian.ai_state.exposure),
+			int(state.qimian.ai_state.moto_tier),
+			int(state.qimian.ai_state.qijin_clues),
+		])
+		lines.append("")
+		lines.append("[b]▸ 逐日行动回放[/b]")
+		for entry in state.qimian.log:
+			lines.append("── 第 %d 天 ──" % entry.day)
+			lines.append("   行动：%s" % entry.title)
+			lines.append("   真相：%s" % entry.truth)
+			if entry.has("ai_replay") and str(entry.ai_replay) != "":
+				lines.append("   AI 决策：%s" % entry.ai_replay)
+			if entry.has("subjective_fragment") and str(entry.subjective_fragment) != "":
+				lines.append("   祁眠记录：%s" % entry.subjective_fragment)
 	else:
 		lines.append("")
 		lines.append("祁眠日志仍被隐藏。通关 Demo 后解锁。")
+
 	event_log.text = "\n".join(lines)
-
-func _build_day_context_text(state: Dictionary) -> String:
-	var context: Dictionary = state.morning_context
-	var lines := []
-	lines.append("[b]今日态势[/b]")
-	lines.append("压力：%s" % _pressure_label(str(context.get("pressure_type", "unknown"))))
-	lines.append("清晨：%s" % str(context.get("text", "")))
-	lines.append("线索：%s" % str(context.get("clue", "")))
-	var warning := str(context.get("blood_moon_warning", ""))
-	if warning != "":
-		lines.append("[color=red]血月预警：%s[/color]" % warning)
-	if state.demo_complete:
-		lines.append("[b]结局：%s[/b]" % _ending_label(state.ending_state))
-	return "\n".join(lines)
-
-func _phase_label(phase: String) -> String:
-	match phase:
-		"morning":
-			return "清晨"
-		"day":
-			return "白天"
-		"evening":
-			return "黄昏"
-		"night":
-			return "夜晚"
-		"searching":
-			return "室内搜索"
-		"reveal":
-			return "日志揭示"
-		_:
-			return phase
-
-func _pressure_label(pressure_type: String) -> String:
-	match pressure_type:
-		"tutorial":
-			return "熟悉环境"
-		"scarcity":
-			return "资源紧张"
-		"stress":
-			return "精神压力"
-		"mobility":
-			return "移动受限"
-		"shelter":
-			return "据点暴露"
-		"warning":
-			return "血月前兆"
-		"blood_moon":
-			return "血月"
-		"aftermath":
-			return "灾后清点"
-		"foreshadow":
-			return "异常伏笔"
-		"qimian":
-			return "异常痕迹"
-		_:
-			return pressure_type
-
-func _ending_label(ending_state: String) -> String:
-	match ending_state:
-		"reached_gate_quarantine":
-			return "抵达保护区门口，隔离观察"
-		"barely_reached_gate":
-			return "勉强抵达保护区门口"
-		"collapsed":
-			return "崩溃边缘"
-		_:
-			return "进行中"
-
-func _flag_label(value: bool) -> String:
-	return "已确认" if value else "未确认"
-
-func _facility_summary(facilities: Dictionary) -> String:
-	var labels := []
-	for facility_id in ["bed", "workbench", "barricade", "radio", "storage"]:
-		var facility: Dictionary = facilities[facility_id]
-		var used_label := "*" if bool(facility.used_today) else ""
-		labels.append("%s%d%s" % [facility.name, int(facility.level), used_label])
-	return "  ".join(labels)

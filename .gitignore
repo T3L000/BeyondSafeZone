@@ -3,3 +3,8 @@
 builds/
 *.tmp
 *.log
+.local_tools/
+.codebuddy/
+FHL-Image-Studio*/
+config/cli.env.local
+config/fhl-api.local.json

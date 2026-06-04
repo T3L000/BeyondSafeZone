@@ -1,40 +1,93 @@
-# Demo Video Script
+﻿# Demo Video Script
+
+> **对齐版本**: 分镜基于 Godot 灰盒 Demo 实际可录制内容撰写。标注 `[effect]` 的为后期可添加的视觉强调。
 
 Target length: 1-3 minutes.
 
 ## Goal
 
-Show that the demo is playable, understandable, and centered on the hidden AI protagonist mechanic.
+Show that the demo is playable, understandable, and centered on the hidden AI protagonist mechanic. All footage must come from the actual Godot greybox build.
 
 ## Draft Structure
 
 ### 0:00-0:15 Hook
 
-Introduce the premise: Chen Xing is trying to survive outside the safe zone, but the city is also being changed by someone the player cannot see.
+**画面**: 标题卡 → 林行在家中的灰盒界面（第 1 天清晨状态）
+**字幕**: 末日降临。林行只有一个目标：活着到达保护区。
+**旁白**: 「保护区之外」——一个关于生存的游戏。一个关于你看不见的人的游戏。
 
 ### 0:15-0:45 Core Loop
 
-Show daytime exploration, resource collection, bicycle range pressure, and nighttime shelter management.
+**画面**: 
+- 节点式大地图界面（14 个地点，近/中/远三圈，资源倾向/危险等级/图标显示）
+- 点击地点进入室内搜索（超市房间卡片：「收银区」「冷库门口」→ 谨慎搜索/快速搜索/制造噪音按钮）
+- 黄昏回到据点，夜晚经营面板（五大设施：床铺、工作台、封窗、收音机、储物台）
+- 资源面板（食物/水/药品/建材/零件/燃料 + 林行状态：生命/疲劳/压力/感染/希望）
+
+**字幕**: 白天骑自行车探索城市。夜晚经营据点。资源永远不够。
+**旁白**: 每一天都在做选择：今天是修车，还是加固门窗？是搜刮更多，还是趁早回家？
 
 ### 0:45-1:15 Blood Moon Pressure
 
-Show day 7 or day 14 blood moon warnings, shelter preparation, and the result of survival pressure.
+**画面**:
+- 第 6 天「今日态势」面板 + 血月预警文字（红色高亮）
+- 封窗操作（建材-2，防御+1）
+- 第 7 天血月结算文本（"血月被稳稳撑过去" 或 "血月擦着据点过去"）
+- 第 14 天终局预警 → 第 15 天结局揭示
+
+**字幕**: 第 7 天血月。第 11-14 天红潮。第 15 天，必须离开。
+**旁白**: 第一次血月教你防守。后期红潮夜压垮据点。最后一次血月逼你逃跑。
 
 ### 1:15-1:45 Hidden AI Impact
 
-Show world changes that look mysterious in the first run: missing supermarket supplies, fewer zombies near the subway, anonymous medicine, or changed route danger.
+**画面**:
+- 节点地图上的 `qimian` 异常标记（超市/诊所/地铁口出现 qimian 图标）
+- 祁眠异常线索面板滚动展示："社区诊所药柜被重新锁过"→"超市货架像被人有计划地清过"→"地铁口的尸群少了"
+- 林行再访超市时「已搜/已空」状态变化
+
+**字幕**: 但不是只有你在行动。这座城市里，还有另一个人。
+**旁白**: 货架被有计划地清空。尸群在深夜被引偏。你有注意到地图上那些无法解释的痕迹吗？
 
 ### 1:45-2:20 Reveal
 
-Show the demo-end Qimian action log and explain that the AI was controlling a hidden protagonist in the same world.
+**画面**:
+- Demo 结束界面：结局文字（"抵达保护区门口，隔离观察"）
+- 祁眠行动日志面板逐条展开：
+  - "第 5 天：祁眠醒来 — 确认普通丧尸不会主动攻击自己"
+  - "第 6 天：诊所取药 — 只拿走任务途中需要的药品"
+  - "第 8 天：超市夜行 — 避开人类巡逻，拿走便携食物"
+  - "第 11 天：尸群偏移 — 为避开探照灯，把尸群引到另一条街"
+  - "第 15 天：尸群藏身 — 藏在尸群里改变路线，间接让林行抵达筛查棚"
+- 每条日志的「AI 回放」和「祁眠残句」可短暂闪现
+
+**字幕**: 你以为的随机末日，其实是另一个人的规则驱动选择。
+**旁白**: 通关后，隐藏日志解锁。那些你以为是运气的事件，其实是一个人用他的规则做出的选择。
 
 ### 2:20-3:00 Closing
 
-Restate the key innovation: AI is not a chat layer; it is a traceable hidden character whose choices reshape the player's survival story.
+**画面**: 
+- 回到标题卡，叠加核心机制关键词：人格卡 → 确定性规则 → 共享地图 → 行动日志
+- 比赛信息：叙事类游戏 · 用 AI 重塑叙事体验
+
+**字幕**: AI 不是聊天框。AI 是那个你看不见、但已经在改变你世界的人。
+**旁白**: 「保护区之外」——AI 不是你问什么就回答什么的助手。它是另一个主角。它有自己的规则。它正在改变你生存的世界。
+
+## 录制清单
+
+| 时间点 | 需要录制的界面/功能 | 当前 Demo 状态 |
+|--------|-------------------|----------------|
+| 0:00-0:15 | 标题卡、第 1 天清晨状态 | ✅ 已实现 |
+| 0:15-0:45 | 节点地图、室内搜索（超市）、夜晚经营面板、资源面板 | ✅ 已实现 |
+| 0:45-1:15 | 第 6 天血月预警、封窗操作、第 7 天血月结算 | ✅ 已实现 |
+| 1:15-1:45 | 节点地图 qimian 标记、祁眠线索面板、超市再访状态 | ✅ 已实现 |
+| 1:45-2:20 | Demo 结束结局、祁眠行动日志逐条展示 | ✅ 已实现 |
+| 2:20-3:00 | 标题卡 + 核心机制关键词叠加 | [effect] 后期合成 |
 
 ## Notes
 
-- Keep claims tied to visible demo footage.
-- Use subtitles for the AI mechanic so judges understand it quickly.
-- Avoid promising full later-game routes unless labeled as future scope.
+- 所有可录制画面均来自当前 Godot 灰盒 Demo (`game/scripts/main.gd` + `game_simulation.gd`)。
+- 「祁眠异常线索」面板在 Demo 运行中实时累积显示。
+- 祁眠日志在 Demo 结束后完整展示，含 AI 回放和主观残句。
+- 建议使用清晰中文硬字幕标注 AI 机制，确保评委快速理解。
+- 不要在视频中声称未实现的功能（如完整的祁眠可玩路线、多结局分支、正式像素美术）。
 

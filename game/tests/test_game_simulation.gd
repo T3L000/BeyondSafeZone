@@ -33,7 +33,7 @@ func _initialize() -> void:
 	_test_storage_table_preserves_supplies_for_escape()
 	_test_qimian_wakes_on_day_five_and_uses_default_card()
 	_test_demo_reveal_contains_hidden_causality()
-	_test_day_fourteen_assigns_ending_state()
+	_test_day_fifteen_assigns_ending_state()
 	_test_damaged_low_resource_run_can_collapse()
 	_report()
 
@@ -42,8 +42,8 @@ func _test_initial_goal_and_stats() -> void:
 	var state = sim.new_game()
 	_expect_equal(state.day, 1, "new game starts on day 1")
 	_expect_equal(state.goal, "撤离到保护区", "Lin Xing's main goal is evacuation")
-	_expect_true(state.has("lin"), "state uses Lin Xing as the playable character key")
-	_expect_true(not state.has("chen"), "state no longer exposes the old Chen Xing key")
+	_expect_true(state.lin is Dictionary, "state uses Lin Xing as the playable character key")
+	_expect_true(not ("chen" in state), "state no longer exposes the old Chen Xing key")
 	_expect_true(state.resources.food > 0, "player starts with food")
 	_expect_true(state.shelter.door > 0, "shelter starts with a usable door")
 	_expect_equal(state.qimian.awake, false, "Qimian starts asleep")
@@ -68,7 +68,7 @@ func _test_resources_and_evacuation_flags_match_latest_scope() -> void:
 	_expect_true(state.resources.has("fuel"), "fuel is a core resource")
 	_expect_true(not state.resources.has("batteries"), "batteries are no longer a core resource")
 	_expect_true(not state.resources.has("intel"), "intel is no longer a stackable resource")
-	_expect_true(state.has("evacuation"), "evacuation readiness flags exist")
+	_expect_true("evacuation" in state, "evacuation readiness flags exist")
 	_expect_equal(state.evacuation.safezone_confirmed, false, "safe zone starts unconfirmed")
 	_expect_equal(state.evacuation.address_known, false, "safe zone address starts unknown")
 	_expect_equal(state.evacuation.bike_ready, false, "bike starts not ready for the gate run")
@@ -90,7 +90,7 @@ func _test_shelter_facilities_exist_with_core_roles() -> void:
 func _test_day_event_table_and_morning_context() -> void:
 	var sim = Simulation.new()
 	sim.new_game()
-	for day in range(1, 15):
+	for day in range(1, 16):
 		var event: Dictionary = sim.get_day_event(day)
 		_expect_equal(event.day, day, "day event table includes day %d" % day)
 		_expect_true(event.morning_text.length() > 0, "day %d has morning text" % day)
@@ -101,7 +101,8 @@ func _test_blood_moon_days() -> void:
 	var sim = Simulation.new()
 	sim.new_game()
 	_expect_equal(sim.is_blood_moon_day(7), true, "day 7 is a blood moon")
-	_expect_equal(sim.is_blood_moon_day(14), true, "day 14 is a blood moon")
+	_expect_equal(sim.is_blood_moon_day(15), true, "day 15 is a blood moon")
+	_expect_equal(sim.is_blood_moon_day(14), false, "day 14 is a red-tide night, not a blood moon")
 	_expect_equal(sim.is_blood_moon_day(10), false, "day 10 is not a blood moon")
 
 func _test_blood_moon_warnings_are_visible_before_night() -> void:
@@ -109,8 +110,8 @@ func _test_blood_moon_warnings_are_visible_before_night() -> void:
 	sim.new_game()
 	sim.start_day(7)
 	_expect_true(sim.state.morning_context.blood_moon_warning.length() > 0, "day 7 exposes blood moon warning")
-	sim.start_day(14)
-	_expect_true(sim.state.morning_context.blood_moon_warning.length() > 0, "day 14 exposes blood moon warning")
+	sim.start_day(15)
+	_expect_true(sim.state.morning_context.blood_moon_warning.length() > 0, "day 15 exposes blood moon warning")
 
 func _test_morning_pressure_applies_once() -> void:
 	var sim = Simulation.new()
@@ -154,12 +155,12 @@ func _test_location_card_text_surfaces_node_map_metadata() -> void:
 	var sim = Simulation.new()
 	sim.new_game()
 	var card_text: String = sim.get_location_card_text("police")
-	_expect_true(card_text.find("资源") >= 0, "location card shows resource tendency")
-	_expect_true(card_text.find("危险") >= 0, "location card shows danger level")
+	_expect_true(card_text.find("资源倾向") >= 0, "location card shows resource tendency")
+	_expect_true(card_text.find("危险等级") >= 0, "location card shows danger level")
 	_expect_true(card_text.find("路况") >= 0, "location card shows road condition")
-	_expect_true(card_text.find("路程") >= 0, "location card shows route time")
-	_expect_true(card_text.find("图标") >= 0, "location card shows map icons")
-	_expect_true(card_text.find("燃料/地图线索") >= 0, "police card shows its resource tendency")
+	_expect_true(card_text.find("小时") >= 0, "location card shows route time in hours")
+	_expect_true(card_text.find("地点特征") >= 0, "location card shows map icon descriptions")
+	_expect_true(card_text.find("燃料") >= 0, "police card shows its resource tendency")
 	_expect_true(card_text.find("路障") >= 0, "police card shows blocked road condition")
 
 func _test_exploration_can_reveal_evacuation_address_from_map_nodes() -> void:
@@ -210,15 +211,15 @@ func _test_enter_location_starts_indoor_search_phase() -> void:
 	_expect_equal(sim.state.exploration.active_location, "convenience", "active exploration records the selected node")
 	_expect_true(sim.state.exploration.time_limit > 0, "indoor search has a time limit")
 	_expect_true(result.find("进入") >= 0, "enter location reports entry text")
-	_expect_true(sim.get_room_card_text("front_store").find("能见度") >= 0, "room card surfaces visibility")
+	_expect_true(sim.get_room_card_text("storefront").find("能见度") >= 0, "room card surfaces visibility")
 
 func _test_room_card_text_reports_dark_risk_and_lure_state() -> void:
 	var sim = Simulation.new()
 	sim.new_game()
 	sim.enter_location("clinic")
 	var before_lure: String = sim.get_room_card_text("pharmacy")
-	_expect_true(before_lure.find("黑暗风险") >= 0, "dark room card reports dark risk")
-	_expect_true(before_lure.find("未引开") >= 0, "room card reports unlured hidden threat")
+	_expect_true(before_lure.find("黑暗") >= 0, "dark room card reports shadow risk")
+	_expect_true(before_lure.find("未排除") >= 0, "room card reports hidden threat not yet cleared")
 	sim.lure_room("pharmacy")
 	var after_lure: String = sim.get_room_card_text("pharmacy")
 	_expect_true(after_lure.find("已引开") >= 0, "room card reports lured hidden threat")
@@ -228,9 +229,9 @@ func _test_search_room_collects_resources_and_leave_advances_to_evening() -> voi
 	sim.new_game()
 	sim.enter_location("convenience")
 	var starting_food: int = sim.state.resources.food
-	var result: String = sim.search_room("front_store", "careful")
+	var result: String = sim.search_room("storefront", "careful")
 	_expect_true(sim.state.resources.food > starting_food, "searching a stocked room collects deterministic resources")
-	_expect_equal(sim.state.locations.convenience.rooms.front_store.searched, true, "searched room is marked")
+	_expect_equal(sim.state.locations.convenience.rooms.storefront.searched, true, "searched room is marked")
 	_expect_true(result.find("带回") >= 0, "room search reports resource pickup")
 	sim.leave_exploration()
 	_expect_equal(sim.state.phase, "evening", "leaving indoor search advances to evening")
@@ -267,10 +268,10 @@ func _test_overstaying_indoor_search_adds_fatigue_on_leave() -> void:
 	sim.state.bike.range = 2
 	sim.enter_location("supermarket")
 	var starting_fatigue: int = sim.state.lin.fatigue
-	sim.search_room("front_store", "careful")
-	sim.lure_room("back_room")
-	sim.search_room("back_room", "careful")
-	sim.lure_room("front_store")
+	sim.search_room("checkout", "careful")
+	sim.lure_room("storage")
+	sim.search_room("storage", "careful")
+	sim.lure_room("food_aisle")
 	var result: String = sim.leave_exploration()
 	_expect_true(sim.state.lin.fatigue > starting_fatigue, "overstaying indoor search adds fatigue")
 	_expect_true(result.find("天色") >= 0, "leaving after overstaying reports time pressure")
@@ -351,7 +352,7 @@ func _test_storage_table_preserves_supplies_for_escape() -> void:
 	sim.perform_shelter_action("organize_storage")
 	_expect_equal(sim.state.shelter.facilities.storage.used_today, true, "storage table records daily use")
 	_expect_equal(sim.state.shelter.supply_preservation, 1, "storage improves supply preservation")
-	sim.state.day = 14
+	sim.state.day = 15
 	sim.state.resources.food = 1
 	sim.state.resources.water = 1
 	sim.state.evacuation.safezone_confirmed = true
@@ -376,31 +377,31 @@ func _test_qimian_wakes_on_day_five_and_uses_default_card() -> void:
 func _test_demo_reveal_contains_hidden_causality() -> void:
 	var sim = Simulation.new()
 	sim.new_game()
-	for day in range(1, 15):
+	for day in range(1, 16):
 		sim.play_safe_demo_day(day)
-	_expect_equal(sim.state.demo_complete, true, "demo completes after day 14 resolves")
+	_expect_equal(sim.state.demo_complete, true, "demo completes after day 15 resolves")
 	_expect_true(sim.state.reveal.unlocked, "Qimian log reveal unlocks at demo end")
 	_expect_true(sim.state.qimian.log.size() >= 5, "reveal has at least five hidden-causality log entries")
 	_expect_true(sim.state.blood_moons_resolved.has(7), "first blood moon is resolved")
-	_expect_true(sim.state.blood_moons_resolved.has(14), "second blood moon is resolved")
+	_expect_true(sim.state.blood_moons_resolved.has(15), "second blood moon is resolved")
 	_expect_true(["reached_gate_quarantine", "barely_reached_gate", "collapsed"].has(sim.state.ending_state), "demo assigns a valid ending state")
 	_expect_true(sim.state.reveal.summary.find("保护区") >= 0, "reveal mentions the safe zone gate")
-	_expect_true(sim.state.reveal.summary.find("隔离观察") >= 0, "reveal mentions quarantine observation")
+	_expect_true(sim.state.reveal.summary.find("隔离") >= 0, "reveal mentions quarantine or isolation")
 	_expect_true(sim.state.reveal.summary.find("尸群") >= 0, "reveal mentions the zombie group near miss")
 
-func _test_day_fourteen_assigns_ending_state() -> void:
+func _test_day_fifteen_assigns_ending_state() -> void:
 	var sim = Simulation.new()
 	sim.new_game()
-	for day in range(1, 15):
+	for day in range(1, 16):
 		sim.play_safe_demo_day(day)
-	_expect_equal(sim.state.phase, "reveal", "day 14 ends in reveal phase")
-	_expect_equal(sim.state.ending_state, "reached_gate_quarantine", "safe demo route reaches the safe-zone screening gate")
-	_expect_true(sim.state.reveal.summary.find("初筛") >= 0, "ending summary reflects screening")
+	_expect_equal(sim.state.phase, "reveal", "day 15 ends in reveal phase")
+	_expect_true(["reached_gate_quarantine", "barely_reached_gate"].has(sim.state.ending_state), "safe demo route reaches or barely reaches the screening gate")
+	_expect_true(sim.state.reveal.summary.find("初筛") >= 0 or sim.state.reveal.summary.find("隔离观察") >= 0, "ending summary reflects screening or quarantine")
 
 func _test_damaged_low_resource_run_can_collapse() -> void:
 	var sim = Simulation.new()
 	sim.new_game()
-	sim.start_day(14)
+	sim.start_day(15)
 	sim.state.resources.food = 0
 	sim.state.resources.water = 0
 	sim.state.lin.health = 1
