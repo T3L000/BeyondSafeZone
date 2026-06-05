@@ -21,6 +21,26 @@
 
 <!-- 代码线每次会话结束后在此追加 -->
 
+### [2026-06-05] 仓库同步：合并远端 Unity 项目并推送 main
+- **改了什么**:
+  1. 确认远端仓库为 `https://github.com/T3L000/BeyondSafeZone.git`，本地分支为 `main`。
+  2. 将本地文档 / Godot 灰盒 / Unity 灰盒开发记录提交为 `7493946 chore: sync project docs and prototype assets`。
+  3. 拉取远端 `5b42ded Add Unity migration project` 后，使用 `--allow-unrelated-histories` 合并远端 Unity 项目历史。
+  4. 解决 `.gitignore` 合并冲突，保留 Godot、Unity、IDE、本地工具和本地密钥忽略规则。
+  5. 将正在使用的 Unity 工程内容同步进仓库内 `BeyondSafeZoneUnity/`，只同步 `Assets`、`Packages`、`ProjectSettings`，没有同步 Unity 生成目录。
+  6. 完成合并提交 `7bade05 merge remote Unity project`，并推送到远端 `origin/main`。
+- **新增/修改的文件或资产**: 根目录 `.gitignore`；仓库内 Unity 项目 `BeyondSafeZoneUnity/`；提交历史同步到 GitHub。
+- **验证状态**:
+  - ✅ `git push origin main` 成功，远端 `main` 从 `5b42ded` 更新到 `7bade05`。
+  - ✅ `git status --short --branch` 显示工作区干净。
+  - ✅ `git log --oneline --decorate --max-count=3` 显示 `HEAD -> main, origin/main` 指向 `7bade05`。
+  - ✅ `git ls-remote origin refs/heads/main` 返回 `7bade05758ba86dde3dc9798ca305c5e6103c491`。
+  - ✅ 暂存清单检查未发现 `.codebuddy/`、`.local_tools/`、`cli.env.local`、`fhl-api.local`。
+- **对其他线的影响**:
+  - **设定线**：无机制变化。
+  - **美术线**：Unity 字体、TMP、灰盒场景和脚本现在已进入 GitHub 仓库；后续素材可围绕仓库内 `BeyondSafeZoneUnity/` 对齐。
+  - **比赛材料线**：可以引用 GitHub 仓库作为当前项目远端，但对外仍需区分 greybox / prototype 与最终美术表现。
+
 ### [2026-06-04] OneRunMain HUD 布局热修
 - **改了什么**:
   1. 修正 `OneRunMain` 运行时 HUD 生成布局：`Header` 顶部居中，`Status` 左上，`Log` 右上，`Prompt` 底部居中。

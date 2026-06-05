@@ -2,6 +2,41 @@
 
 This file is the long-term memory for BeyondSafeZone conversations. Append important information here before ending a session. Keep `HANDOFF.md` short; put durable details here.
 
+## 2026-06-05
+
+### Repository Sync: GitHub main pushed
+
+- User asked to upload the repository first.
+- Canonical remote verified as `https://github.com/T3L000/BeyondSafeZone.git`; local branch was `main`.
+- Local commit created before remote merge:
+  - `7493946 chore: sync project docs and prototype assets`
+- Initial push was rejected because remote `main` already contained unrelated history:
+  - Remote commit: `5b42ded Add Unity migration project`
+- Fetched `origin/main` and merged with `git merge origin/main --allow-unrelated-histories --no-edit`.
+- Merge conflict occurred only in root `.gitignore`.
+- Resolved `.gitignore` to ignore:
+  - Godot generated folders: `.godot/`, `.superpowers/`
+  - Unity generated folders: `[Ll]ibrary/`, `[Tt]emp/`, `[Oo]bj/`, `[Bb]uild/`, `[Bb]uilds/`, `[Ll]ogs/`, `[Uu]ser[Ss]ettings/`, `[Mm]emoryCaptures/`
+  - IDE files: `.vs/`, `*.csproj`, `*.sln`, `.idea/`, swap files
+  - OS files: `.DS_Store`, `Thumbs.db`
+  - local tools/secrets: `.local_tools/`, `.codebuddy/`, `FHL-Image-Studio*/`, `config/cli.env.local`, `config/fhl-api.local.json`, `*.tmp`, `*.log`
+- Important repository layout update:
+  - Active sibling Unity work from `E:\Download\working\BeyondSafeZoneUnity` was copied into the in-repo Unity project at `E:\Download\working\BeyondSafeZone\BeyondSafeZoneUnity`.
+  - Only `Assets`, `Packages`, and `ProjectSettings` were copied.
+  - Generated Unity directories such as `Library`, `Temp`, `obj`, and `UserSettings` were not copied.
+- Before commit, staged-file safety check found no `.codebuddy/`, `.local_tools/`, `cli.env.local`, or `fhl-api.local` files.
+- Merge commit completed:
+  - `7bade05 merge remote Unity project`
+- Push completed successfully:
+  - `git push origin main`
+  - Remote `main` updated from `5b42ded` to `7bade05`.
+- Final verification:
+  - `git status --short --branch` returned clean `## main`.
+  - `git log --oneline --decorate --max-count=3` showed `7bade05 (HEAD -> main, origin/main) merge remote Unity project`.
+  - `git ls-remote origin refs/heads/main` returned `7bade05758ba86dde3dc9798ca305c5e6103c491`.
+- No force push was used.
+- No new gameplay or design decision was made, so `docs/DECISIONS.md` did not need an update.
+
 ## 2026-06-04
 
 ### Code Lane: C-008 Clinic Anonymous Medicine Feedback
