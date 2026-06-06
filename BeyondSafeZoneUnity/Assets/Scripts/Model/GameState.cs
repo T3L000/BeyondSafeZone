@@ -259,6 +259,63 @@ namespace BeyondSafeZone.Model
         public string Summary = "";
     }
 
+    /// <summary>据点行动可用性查询结果（只读，不修改 GameState）</summary>
+    [Serializable]
+    public struct ShelterActionAvailability
+    {
+        public bool Available;
+        public string ActionId;
+        public string FailureReason; // 可用时为空字符串
+
+        public static ShelterActionAvailability Ok(string actionId) => new()
+        {
+            Available = true, ActionId = actionId, FailureReason = ""
+        };
+
+        public static ShelterActionAvailability Fail(string actionId, string reason) => new()
+        {
+            Available = false, ActionId = actionId, FailureReason = reason
+        };
+    }
+
+    /// <summary>搜刮行动可用性查询结果（只读，不修改 GameState）</summary>
+    [Serializable]
+    public struct ExplorationActionAvailability
+    {
+        public bool Available;
+        public string ActionId;
+        public string FailureReason; // 可用时为空字符串
+
+        public static ExplorationActionAvailability Ok(string actionId) => new()
+        {
+            Available = true, ActionId = actionId, FailureReason = ""
+        };
+
+        public static ExplorationActionAvailability Fail(string actionId, string reason) => new()
+        {
+            Available = false, ActionId = actionId, FailureReason = reason
+        };
+    }
+
+    /// <summary>日阶段行动可用性查询结果（resolve_night / next_day，只读）</summary>
+    [Serializable]
+    public struct DayPhaseActionAvailability
+    {
+        public bool Available;
+        public string ActionId;
+        public string FailureReason; // 可用时为空字符串
+
+        public static DayPhaseActionAvailability Ok(string actionId) => new()
+        {
+            Available = true, ActionId = actionId, FailureReason = ""
+        };
+
+        public static DayPhaseActionAvailability Fail(string actionId, string reason) => new()
+        {
+            Available = false, ActionId = actionId, FailureReason = reason
+        };
+    }
+
     /// <summary>游戏状态（Model 层根对象）</summary>
     [Serializable]
     public class GameState

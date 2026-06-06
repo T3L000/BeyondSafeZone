@@ -170,10 +170,18 @@ namespace BeyondSafeZone.Core
         public static List<string> GetLocationIds(GameState state) =>
             state.Locations.Keys.ToList();
 
+        /// <summary>查询搜刮行动是否可用及失败原因（只读，不修改 GameState）</summary>
+        public static ExplorationActionAvailability CheckExplorationActionAvailability(GameState state, string actionId, string roomId = "") =>
+            ExplorationController.CheckActionAvailability(state, actionId, roomId);
+
         // ============ 据点委托 ============
 
         public static string PerformShelterAction(GameState state, string actionId) =>
             ShelterController.PerformAction(state, actionId);
+
+        /// <summary>查询据点行动是否可用及失败原因（只读，不修改 GameState）</summary>
+        public static ShelterActionAvailability CheckShelterActionAvailability(GameState state, string actionId) =>
+            ShelterController.CheckActionAvailability(state, actionId);
 
         // ============ 夜晚结算 ============
 
@@ -190,6 +198,35 @@ namespace BeyondSafeZone.Core
             if (newPublicClues.Count == 0)
                 return result;
             return $"{result}\n昨夜线索：{string.Join(" ", newPublicClues)}";
+        }
+
+        /// <summary>查询夜晚结算/下一天是否可用及原因（只读，对齐 OneRunGameController 行为）</summary>
+        /// <remarks>
+        /// A-FIX-003：移除凭空新增的 night/reveal/searching phase gate，
+        /// 严格对齐 OneRunGameController.ResolveNight / NextDay 当前真实行为：
+        ///   - resolve_night：只 DemoComplete 阻止；searching 可用（UI 层先 ReturnToShelter）；其他阶段无门控。
+        ///   - next_day：只 DemoComplete 阻止；无其他 phase gate（handler 直接调 StartDay）。
+        /// 如果后续需要阻止 night/reveal/searching，应由 B/UI 线或流程规则任务负责。
+        /// </remarks>
+        public static DayPhaseActionAvailability CheckDayPhaseActionAvailability(GameState state, string actionId)
+        {
+            if (actionId == "resolve_night")
+            {
+                if (state.DemoComplete)
+                    return DayPhaseActionAvailability.Fail(actionId, "演示已完成，无法再进行夜晚结算。");
+                // 所有阶段可用（对齐 OneRunGameController.ResolveNight：只 DemoComplete 阻止）
+                return DayPhaseActionAvailability.Ok(actionId);
+            }
+
+            if (actionId == "next_day")
+            {
+                if (state.DemoComplete)
+                    return DayPhaseActionAvailability.Fail(actionId, "演示已完成，无法再推进天数。");
+                // 所有阶段可用（对齐 OneRunGameController.NextDay：只 DemoComplete 阻止，无其他 phase gate）
+                return DayPhaseActionAvailability.Ok(actionId);
+            }
+
+            return DayPhaseActionAvailability.Fail(actionId, "未知行动。");
         }
 
         // ============ 安全演示 ============

@@ -1,534 +1,654 @@
 # Cross-Lane Change Log
 
-> **用途**: 每条开发线在会话结束时，将本次认可的变动写入对应栏目。其他线开工时先读此文件，确认是否有需要关注的联动变更。
+> 用途：每条开发线在会话结束时，将本次认可的变动写入对应栏目。其他线开工时先读此文件，确认是否有需要关注的联动变更。
 >
-> **规则**: 只写 "做了什么 / 改了哪里 / 对其他线有没有影响"。不写详细原因（原因留在 `docs/DECISIONS.md` 和 `docs/PROJECT_MEMORY.md`）。
+> 当前口径：`BeyondSafeZoneUnity/` 是唯一当前主工程。旧 Godot 项目和旧兄弟 Unity 目录不再作为开发入口。
 
 ---
 
-## 读取指引（每次开工必读）
+## 读取指引
 
 | 如果你是.. | 必看栏目 |
 |-----------|---------|
-| 代码线 | Code、Design（看机制变更）、Art（看素材路径变更） |
-| 设定/策划线 | Design、Code（看实现反馈） |
-| 美术线 | Art、Design（看新素材需求）、Code（看新素材引用） |
-| 比赛材料线 | Design、Code、Art（全部，需要对齐 Demo 实际情况） |
+| 代码线 | Code、Design、Art |
+| 设定/策划线 | Design、Code |
+| 美术线 | Art、Design、Code |
+| 比赛材料线 | Design、Code、Art、Contest |
 
 ---
 
 ## Code Lane
 
-<!-- 代码线每次会话结束后在此追加 -->
+### [2026-06-06] A-FIX-003 后续回归失败接手：测试口径修正，等待 Bypass 验证
+
+- **触发背景**: B 线修复后再次全量 EditMode 曾出现 3 个失败：
+  1. `TestExplorationActionAvailabilityAllowsLureAndLeaveWhenSearching`
+  2. `TestShelterFacilityPromptShowsUnavailableReason`
+  3. `TestShelterPromptShowsPhaseAndResourceReasons`
+- **根因确认**:
+  1. `convenience` 真实房间只有 `storefront` / `warehouse`，原测试在已进入 `convenience` 后查询 `checkout`，该 roomId 属于 `supermarket`，与当前地点不匹配。
+  2. A-001 已稳定将据点行动查询阶段门控改为允许 `morning` / `day` / `evening`，因为 UI 真实执行会通过 `EnsureShelterActionPhase()` 自动转入 `evening`；两个 UI 测试仍在期待 `morning` / `day` 显示“现在不是执行据点行动的时机”，属于旧口径断言。
+- **改了什么**:
+  1. `TestGameSimulation.cs` 中 `quick_search` / `careful_search` 的验证 roomId 从 `checkout` 改为同地点未搜索房间 `warehouse`。
+  2. `TestOneRunUI.cs` 中据点提示测试改为验证 `morning` / `day` 阶段显示可交互提示，并保留 `searching` 阶段显示阶段不可用原因。
+  3. 保留材料不足、燃料不足原因验证；未改 `GameSimulation`、`ShelterController`、`ExplorationController` 或 `OneRunGameController`。
+- **新增/修改的文件或资产**:
+  - `BeyondSafeZoneUnity/Assets/Tests/TestGameSimulation.cs`
+  - `BeyondSafeZoneUnity/Assets/Tests/TestOneRunUI.cs`
+- **验证状态**:
+  - `debug_check_compilation`: `isCompiling=false`, `isUpdating=false`。
+  - `debug_get_errors`: `count=0`。
+  - 当前 `/health.currentMode` 为 `auto`；`test_run_by_name` 返回 `MODE_FORBIDDEN`，提示该 skill 只能在 `bypass` 运行。
+  - 任务未写成完成；仍需用户切回 UnitySkills `Bypass` 后运行 3 个精确测试和全量 EditMode。
+- **跨线影响**:
+  - **A 线**：仅修正测试口径，不改核心规则。
+  - **B 线**：UI 提示测试现在与 A-001 阶段门控一致。
+  - **C 线 / 美术线 / 比赛材料线**：无运行时影响。
+
+### [2026-06-06] C-001 据点交互范围与高亮反馈
+
+- **改了什么**:
+  1. `World/ShelterInteractable.cs` 新增 `SetHighlighted(bool)` 公共方法、`IsHighlighted` 属性、`baseColor` 缓存和 `ApplyColorTint()` / `HighlightColor()` 私有方法。`Refresh()` 不再直接写 `stateRenderer.color`，改为计算 `baseColor` 后调用 `ApplyColorTint()`，高亮时在基色上叠加 1.5x 亮度 + 0.08 alpha。
+  2. `Player/SideViewShelterPlayerController.cs` 在 `OnTriggerEnter2D` 中增设 `nearbyInteractable.SetHighlighted(true)`，在 `OnTriggerExit2D` 中增设 `nearbyInteractable.SetHighlighted(false)` + 清空前先取消高亮。
+  3. `Tests/TestOneRunWorld.cs` 新增 `TestShelterInteractableHighlightOnApproach` 测试：验证 `SetHighlighted(true)` 改变 `stateRenderer.color`，`SetHighlighted(false)` 恢复。
+- **新增/修改的文件或资产**:
+  - `BeyondSafeZoneUnity/Assets/Scripts/World/ShelterInteractable.cs`
+  - `BeyondSafeZoneUnity/Assets/Scripts/Player/SideViewShelterPlayerController.cs`
+  - `BeyondSafeZoneUnity/Assets/Tests/TestOneRunWorld.cs`
+  - `BeyondSafeZoneUnity/Assets/Tests/OneRunTestHelpers.cs`
+- **验证状态**:
+  - 源码计数：`TestOneRunWorld.cs` 从 5 增至 6 个 `[Test]`。
+  - Lint：四个修改文件全部 `errorCount: 0`。
+  - 测试待 Unity Editor EditMode 运行。
+- **跨线影响**:
+  - **代码线（其他子线）**：无影响，不改 `GameSimulation`、`GameState` 或 `OneRunGameController.cs`。
+  - **设定线 / 美术线 / 比赛材料线**：无影响。高亮是纯灰盒视觉反馈，不改变已有设施交互规则。
+
+### [2026-06-06] C-FIX-001 用真实 Trigger 路径验证设施高亮切换
+
+- **改了什么**:
+  1. `Tests/TestOneRunWorld.cs` 新增 `TestSideViewShelterPlayerControllerSwitchesHighlightOnTriggerOverlap` 测试：通过反射调用 `SideViewShelterPlayerController` 的私有 `OnTriggerEnter2D` / `OnTriggerExit2D`，用真实设施 `Collider2D` 参数验证高亮切换。
+  2. 测试覆盖：进入 radio → 进入 stove → 退出 radio（非当前）→ 退出 stove，断言 `IsHighlighted` 和 `State_*` `SpriteRenderer.color` 在每一步正确切换。
+  3. `Tests/OneRunTestHelpers.cs` 新增 `OneRunController_W7` 到清理列表。
+- **新增/修改的文件或资产**:
+  - `BeyondSafeZoneUnity/Assets/Tests/TestOneRunWorld.cs`
+  - `BeyondSafeZoneUnity/Assets/Tests/OneRunTestHelpers.cs`
+- **验证状态**:
+  - 源码计数：`TestOneRunWorld.cs` 从 7 增至 8 个 `[Test]`。
+  - Lint：两个修改文件全部 `errorCount: 0`。
+  - Unity EditMode 精确方法验证：
+    - `TestShelterInteractableHighlightOnApproach`：`1/1 passed`，jobId `44691a33`。
+    - `TestSideViewShelterPlayerControllerSwitchesHighlightOnTriggerOverlap`：`1/1 passed`，jobId `36b578d7`。
+  - Console：`errors: 2`（均为 stale cache：Mono.Cecil 内部 + TMPro namespace 缓存残留）。
+  - `test_list` discovery 仍用 `unity_test_runner_async_cache` 模式；精确方法验证已绕过缓存。
+  - 不改 `SideViewShelterPlayerController.cs`、`ShelterInteractable.cs`、`OneRunGameController.cs`。
+- **跨线影响**:
+  - 无。纯测试补充，不改任何运行时行为或他线文件。
+
+### [2026-06-06] B-FIX-001 修复不可用按钮真实点击路径
+
+- **问题**: B-001 原实现将不可用按钮设为 `interactable=false`，真实玩家无法点击 disabled button，且测试 `onClick.Invoke()` 绕过了这个限制。
+- **方案**: 方案二——按钮始终保持 `interactable=true`，不可用时视觉弱化（Image.color 变暗），点击后由 handler 内部 Report 失败原因。
+- **改了什么**:
+  1. `OneRunGameController.cs` 新增 `SetButtonVisual(Button, bool)` 静态方法：`interactable` 始终设 `true`，不可用时 Image.color 从 `(0.18,0.23,0.28,0.92)` 变为 `(0.10,0.13,0.16,0.50)` 表达视觉弱化。
+  2. `RefreshAll()` 中 7 个行动按钮的 `interactable=false` 替换为 `SetButtonVisual()` 调用。
+  3. 保留 B-001 的 `ShowPrompt` 增强和 5 个 handler 的 `Report()` 调用。
+  4. `Tests/TestOneRunUI.cs` 新增 `TestHudUnavailableButtonsRemainClickableAndReportReasons`：断言全部 5 个不可用场景下 `Button.interactable == true`，通过 `onClick.Invoke()` 触发并验证日志文本含正确失败原因。覆盖：搜刮中外出行、非搜刮返回据点、非搜刮求助、DemoComplete 夜晚结算、DemoComplete 下一天。
+- **新增/修改的文件或资产**:
+  - `BeyondSafeZoneUnity/Assets/Scripts/UI/OneRunGameController.cs`
+  - `BeyondSafeZoneUnity/Assets/Tests/TestOneRunUI.cs`
+- **验证状态**:
+  - Unity mode: `bypass`。
+  - `TestHudUnavailableButtonsRemainClickableAndReportReasons`：`1/1 passed`，jobId `a23f4755`。
+  - `TestShelterFacilityPromptShowsUnavailableReason`：`1/1 passed`，jobId `2e99862e`。
+  - `TestShelterPromptShowsPhaseAndResourceReasons`：`1/1 passed`，jobId `830e7507`。
+  - `TestMinimumVerticalSliceCoversClinicAiChain`（核心回归）：`1/1 passed`，jobId `b6746c28`。
+  - Lint：两个修改文件全部 `errorCount: 0`。
+- **跨线影响**:
+  - 无。纯 UI 线修改，不改核心规则/World/Player 文件。B-001 的 `ShowPrompt` 增强和 handler Report 保留不变。
+
+### [2026-06-06] B-001 行动按钮不可用/原因提示 UI
+
+- **短规格**:
+  - 触发条件：OneRunMain Play 模式，玩家处于据点或搜刮相关阶段，点击不可用的 HUD 按钮或靠近不可用的设施。
+  - 玩家操作：点击 HUD 行动按钮（外出、返回、结算、下一天、求助），或靠近据点设施查看底部提示。
+  - 状态变化：不改核心规则；只读取 `GameSimulation.CheckShelterActionAvailability(State, actionId)` 或判断 State 阶段。
+  - 可见反馈：按钮不可用时点击后在日志显示原因；靠近设施时底部提示在行动不可用时直接显示失败原因（如资源不足、阶段不允许）。
+  - 验证方法：EditMode 测试写在 `TestOneRunUI.cs`。
+- **改了什么**:
+  1. `OneRunGameController.ShowPrompt(facilityId)` 增强：靠近据点设施时调用 `GameSimulation.CheckShelterActionAvailability` 查询行动可用性，不可用时在底部提示直接显示失败原因文本（替代原来的行动描述）。
+  2. `EnterScavengeLocation` / `ReturnToShelter` / `LeaveHelpMarkAtActiveLocation` / `ResolveNight` / `NextDay` 五个按钮方法在原本静默 return 的分支增加 `Report()` 调用，向日志输出不可用原因。
+  3. `Tests/TestOneRunUI.cs` 新增 3 个 `[Test]`：`TestShelterFacilityPromptShowsUnavailableReason`（阶段门控 + 材料不足）、`TestButtonClickReportsReasonWhenUnavailable`（搜刮中外出、DemoComplete 下一天、不在搜刮中返回据点）、`TestShelterPromptShowsPhaseAndResourceReasons`（day 阶段 + 建造材料不够 + 燃料不足）。
+  4. `Tests/OneRunTestHelpers.cs` 新增 `OneRunController_B1/B2/B3` 到清理列表。
+- **新增/修改的文件或资产**:
+  - `BeyondSafeZoneUnity/Assets/Scripts/UI/OneRunGameController.cs`
+  - `BeyondSafeZoneUnity/Assets/Tests/TestOneRunUI.cs`
+  - `BeyondSafeZoneUnity/Assets/Tests/OneRunTestHelpers.cs`
+- **验证状态**:
+  - 源码计数：`TestOneRunUI.cs` 从 6 增至 9 个 `[Test]`。
+  - Lint：三个修改文件全部 `errorCount: 0`。
+  - 测试待 Unity Editor EditMode 运行。
+- **跨线影响**:
+  - **代码线（A 线）**：B-001 直接消费 A-001 提供的 `CheckShelterActionAvailability` API，不改规则层。
+  - **代码线（C 线 / 世界线）**：不改 `ShelterInteractable.cs` 或玩家控制器；`ShowPrompt` 增强对世界线透明。
+  - **设定线 / 美术线 / 比赛材料线**：无影响。纯 UI 可读性改进。
+
+### [2026-06-06] A-FIX-003 修正夜晚/次日可用性查询与真实 handler 对齐
+
+- **问题**: A-003 的 `CheckDayPhaseActionAvailability` 给 `resolve_night` / `next_day` 增加了 `night`、`reveal`、`searching` 等阶段门控，但 `OneRunGameController.ResolveNight` / `NextDay` 当前真实行为只在 `DemoComplete` 时阻止；`ResolveNight` 在 `searching` 会先返回据点再结算，`NextDay` 其他阶段直接调用 `StartDay`。
+- **修复**:
+  1. `GameSimulation.CheckDayPhaseActionAvailability(state, actionId)` 改为严格对齐当前 handler：`resolve_night` 和 `next_day` 均只在 `DemoComplete` 时返回不可用；未知行动仍返回 `未知行动。`。
+  2. `Tests/TestGameSimulation.cs` 将目标测试改为 `TestDayPhaseActionAvailabilityMatchesCurrentResolveNightHandler` 和 `TestDayPhaseActionAvailabilityMatchesCurrentNextDayHandler`，覆盖 `morning/day/evening/searching/night/reveal`。
+  3. 只读测试已覆盖 `Day`、`Phase`、`DemoComplete`、`EndingState`、`LastEvent`、`Resources` 六字段、`Lin` 关键字段、`Exploration` 关键字段和 `Qimian` 日志/线索计数。
+- **新增/修改的文件或资产**:
+  - `BeyondSafeZoneUnity/Assets/Scripts/Core/GameSimulation.cs`
+  - `BeyondSafeZoneUnity/Assets/Tests/TestGameSimulation.cs`
+- **验证状态**:
+  - Unity project path: `E:/Download/working/BeyondSafeZone/BeyondSafeZoneUnity/Assets`。
+  - Unity mode: `bypass`。
+  - `TestDayPhaseActionAvailabilityMatchesCurrentResolveNightHandler`：`1/1 passed`，jobId `59aa6aa3`。
+  - `TestDayPhaseActionAvailabilityMatchesCurrentNextDayHandler`：`1/1 passed`，jobId `496030ea`。
+  - `test_run` EditMode 全量：jobId `016cf322`，**130/130 passed, 0 failed, 0 skipped**。
+- **跨线影响**:
+  - **B 线 / UI 子线**：若后续接入 `CheckDayPhaseActionAvailability`，它现在表达的是当前按钮 handler 行为，不额外创造新阶段规则。
+  - **设定线 / 美术线 / 比赛材料线**：无影响。
+
+### [2026-06-06] A-003 夜晚/次日流程可用性与失败原因规则接口
+
+- **短规格**:
+  - 触发条件：UI 层准备执行夜晚结算/下一天前查询。
+  - 玩家操作：无直接操作，规则查询。
+  - 状态变化：查询不改变 GameState。
+  - 可见反馈：不做 UI，返回 FailureReason 给 B 线使用。
+  - 验证方法：EditMode 测试写在 TestGameSimulation.cs。
+- **改了什么**:
+  1. `Model/GameState.cs` 新增 `DayPhaseActionAvailability` 结构体。
+  2. `Core/GameSimulation.cs` 新增 `CheckDayPhaseActionAvailability(state, actionId)`：覆盖 `resolve_night`（DemoComplete 阻止、night/reveal 阻止、searching 允许（UI 层先 ReturnToShelter））和 `next_day`（DemoComplete 阻止、night/reveal 阻止、searching 阻止）。
+  3. `Tests/TestGameSimulation.cs` 新增 5 个 `[Test]`：shelter phases 允许、searching 行为报告、DemoComplete 阻止、未知行动、只读不改变状态。
+  4. 后续已由 `A-FIX-003` 修正：查询接口不再额外增加 `night/reveal/searching` 阶段门控，改为对齐当前 `OneRunGameController` handler。
+- **新增/修改的文件或资产**:
+  - `BeyondSafeZoneUnity/Assets/Scripts/Model/GameState.cs`
+  - `BeyondSafeZoneUnity/Assets/Scripts/Core/GameSimulation.cs`
+  - `BeyondSafeZoneUnity/Assets/Tests/TestGameSimulation.cs`
+- **验证状态**:
+  - `debug_force_recompile` → 编译完成。
+  - `test_run` EditMode，jobId `e8a23846`，Unity mode: bypass。
+  - 结果：**130/130 passed, 0 failed, 0 skipped**。
+  - Lint：三个修改文件全部 `errorCount: 0`。
+  - 缓存状态：发现列表 130（含跨类 stale cache），全量通过。
+- **跨线影响**:
+  - **代码线（B 线 / UI 子线）**：可通过 `GameSimulation.CheckDayPhaseActionAvailability(state, actionId)` 获取夜晚/次日不可用原因。
+  - **设定线 / 美术线 / 比赛材料线**：无影响。
+
+- **问题**: `TestExplorationActionAvailabilityBlocksSearchedOrLockedRoom` 中先 `EnterLocation("convenience")` → `SearchRoom("storefront")`，phase 仍为 "searching"。随后 `EnterLocation("clinic")` 被 `ExplorationController.EnterLocation` 的 phase 检查拒绝（要求 morning/day），ActiveLocation 实际未切换。后续 pharmacy Locked 测试实为"roomId 在 convenience 下不存在"，而非"Locked 房间"。
+- **修复**: 拆分为两个独立 GameState：① 已搜房间用当前 `_state` 测试 convenience/storefront；② 锁房间新建 `state2 = GameSimulation.NewGame()`，EnterLocation("clinic") 后设置 pharmacy.Locked=true，并断言 Phase=="searching"、ActiveLocation=="clinic"。
+- **修改的文件**: `TestGameSimulation.cs`（仅测试修复，零 lint，不改规则层）。
+- **验证结果**: `debug_force_recompile` → 编译完成。`test_run` EditMode，jobId `481edb84`，**130/130 passed, 0 failed, 0 skipped**。Unity mode: bypass。缓存状态: 发现列表 130，全量通过。
+- **跨线影响**: 无。
+
+### [2026-06-06] A-002 搜刮房间行动可用性与失败原因规则接口
+
+- **短规格**:
+  - 触发条件：玩家已进入或未进入室内搜刮状态。
+  - 玩家操作：规则层查询 `search_room`、`lure_room`、`leave_exploration` 是否可用。
+  - 状态变化：查询不改变 `GameState`、不消耗时间、不拿资源、不改变房间状态。
+  - 可见反馈：不做 UI，返回的 `FailureReason` 可直接给 B 线显示。
+  - 验证方法：EditMode 测试写在 `TestGameSimulation.cs`。
+- **改了什么**:
+  1. `Model/GameState.cs` 新增 `ExplorationActionAvailability` 结构体（`Available`/`ActionId`/`FailureReason` + `Ok()`/`Fail()`）。
+  2. `Controllers/ExplorationController.cs` 新增 `CheckActionAvailability(GameState, actionId, roomId)`：覆盖 `search_room`/`quick_search`/`careful_search`/`lure_room`/`leave_exploration`，对齐 `SearchRoom`/`LureRoom`/`LeaveExploration` 真实前置条件（阶段、ActiveLocation、roomId 存在、Searched、Locked）。
+  3. `Core/GameSimulation.cs` 新增 `CheckExplorationActionAvailability` 委托方法。
+  4. `Tests/TestGameSimulation.cs` 新增 5 个 `[Test]`：不在 searching 阶段阻止、未知/无效 roomId 阻止、已搜/上锁房间阻止、lure 和 leave 在 searching 中可用、只读不改变状态。
+- **新增/修改的文件或资产**:
+  - `BeyondSafeZoneUnity/Assets/Scripts/Model/GameState.cs`
+  - `BeyondSafeZoneUnity/Assets/Scripts/Controllers/ExplorationController.cs`
+  - `BeyondSafeZoneUnity/Assets/Scripts/Core/GameSimulation.cs`
+  - `BeyondSafeZoneUnity/Assets/Tests/TestGameSimulation.cs`
+- **验证状态**:
+  - `debug_force_recompile` → 编译完成。
+  - `test_run` EditMode，jobId `4fbbe193`，结果 **130/130 passed, 0 failed, 0 skipped**。
+  - Lint：四个修改文件全部 `errorCount: 0`。
+  - 缓存状态：发现列表 130（含跨类 stale cache），全量通过。
+- **跨线影响**:
+  - **代码线（B 线 / UI 子线）**：可通过 `GameSimulation.CheckExplorationActionAvailability(state, actionId, roomId)` 获取搜刮行动不可用原因，在 UI 底部提示或按钮上直接显示。
+  - **设定线 / 美术线 / 比赛材料线**：无影响。
+
+### [2026-06-06] A-FIX-001 修复 A-001 测试断言与验证缓存
+
+- **问题**: `TestCheckAvailabilityReturnsCorrectActionId` 用 `Parts = 0` 判断 `radio` 不可用是错误的。`radio_broadcast` 的资源门槛是 `Fuel`（`BalanceData.SHELTER_RADIO_FUEL = 1`），初始 Fuel=3，导致 `Parts = 0` 时 `radio` 仍报告 `Available = true`，断言 `Assert.IsFalse(aliasRadio.Available)` 会失败。
+- **修复**: `_state.Resources.Parts = 0` → `_state.Resources.Fuel = 0`。`repair_bike` 不可用由 workbench 未建造保证。注释完善。
+- **修改的文件**: `TestGameSimulation.cs`（仅 A 线）。
+- **强制重编译**: `debug_force_recompile` → `isCompiling: false`。
+- **测试运行**: `test_run` EditMode，jobId `f313f1ac`，结果 **130/130 passed, 0 failed, 0 skipped**。
+- **缓存状态**: 发现列表 130（含跨类缓存）。`test_run_by_name` / `test_get_result` 本机有 JSON 解析 bug（`Invalid property identifier character: \\.`），但 `test_run` + `test_get_last_result` 全量通过。
+- **跨线影响**: 无。
+
+### [2026-06-06] A-001 据点行动可用性与失败原因规则接口
+
+- **改了什么**:
+  1. `Model/GameState.cs` 新增 `ShelterActionAvailability` 结构体：`Available`、`ActionId`、`FailureReason` 三个只读字段，带 `Ok()` / `Fail()` 工厂方法。
+  2. `Controllers/ShelterController.cs` 新增 `CheckActionAvailability(GameState, string actionId)` 方法：覆盖所有 15 个行动 ID（含别名），逐条复制 `PerformAction` 的前置条件但不修改状态。
+  3. `Core/GameSimulation.cs` 新增 `CheckShelterActionAvailability` 委托方法。
+  4. `Tests/TestGameSimulation.cs` 新增 13 个 `[Test]`（初始 9 个 + 审查修复 4 个）。
+- **审查修复（2026-06-06）**:
+  - 阶段门控：从 `only evening` 改为允许 `morning`/`day`/`evening`，匹配 `EnsureShelterActionPhase()` 的自动阶段转换行为。`searching`/`night`/`reveal` 仍然阻止。
+  - `workbench_car` 前置条件完善：新增 `Car.Found`/`Car.Ready` 检查 + 按当前修理步骤（StepEngine→StepTire→StepBattery→StepFueled）逐级验证材料和 CarParts 需求，与 `CarController.Repair` 完全对齐。
+  - 别名 ActionId 保留：`repair_bike` 和 `radio` 查询返回原始的请求 actionId，不再被覆盖为正则表示 `workbench_repair`/`radio_broadcast`。
+- **新增/修改的文件或资产**:
+  - `BeyondSafeZoneUnity/Assets/Scripts/Model/GameState.cs`
+  - `BeyondSafeZoneUnity/Assets/Scripts/Controllers/ShelterController.cs`
+  - `BeyondSafeZoneUnity/Assets/Scripts/Core/GameSimulation.cs`
+  - `BeyondSafeZoneUnity/Assets/Tests/TestGameSimulation.cs`
+- **验证状态**:
+  - 源码计数：`TestGameSimulation.cs` 共 53 个 `[Test]`（40 原有 + 9 A-001 初始 + 4 审查修复）。
+  - Lint：所有修改文件 `errorCount: 0`。
+  - 测试待 Unity Editor 中运行（UnitySkills API 不直接暴露 Test Runner 端点）。
+- **跨线影响**:
+  - **代码线（UI 子线）**：`ShowPrompt` 在 morning/day 阶段查询时不会再显示"现在不是执行据点行动的时机。"，因为 UI 层已有 `EnsureShelterActionPhase` 自动转换。`repair_bike`/`radio` 查询返回的 `ActionId` 现在是原始请求 ID，UI 可据此区分玩家意图。
+  - **设定线 / 美术线 / 比赛材料线**：无影响。
+
+### [2026-06-06] ARCH-001 并行开发解耦
+
+- **改了什么**:
+  1. `TestGameSimulation.cs` 收窄为核心规则和确定性模拟测试，共 40 个 `[Test]`。
+  2. 新增 `TestOneRunUI.cs`，承接 HUD、档案、日志、目标、地点卡等 U 类 UI 测试，共 6 个 `[Test]`。
+  3. 新增 `TestOneRunWorld.cs`，承接据点、移动、互动、可读性等世界运行时测试，共 5 个 `[Test]`。
+  4. 新增 `OneRunTestHelpers.cs`，收纳 UI / World 测试共享的 TMP 文本读取、字号读取和运行时对象清理辅助。
+  5. 暂未拆分 `OneRunGameController.cs`；后续新增功能优先收进小 helper 方法，避免继续扩大核心方法。
+- **新增/修改的文件或资产**:
+  - `BeyondSafeZoneUnity/Assets/Tests/TestGameSimulation.cs`
+  - `BeyondSafeZoneUnity/Assets/Tests/TestOneRunUI.cs`
+  - `BeyondSafeZoneUnity/Assets/Tests/TestOneRunWorld.cs`
+  - `BeyondSafeZoneUnity/Assets/Tests/OneRunTestHelpers.cs`
+  - `docs/UNITY_STATUS.md`
+  - `docs/CROSS_LANE_LOG.md`
+  - `docs/PROJECT_MEMORY.md`
+  - `docs/DECISIONS.md`
+- **验证状态**:
+  - 源码计数：`TestGameSimulation.cs` 40、`TestOneRunUI.cs` 6、`TestOneRunWorld.cs` 5，总计 51 个项目 `[Test]`。
+  - `BeyondSafeZone.Tests.TestOneRunUI`：`1/1 passed`，jobId `d1ccae55`。
+  - `BeyondSafeZone.Tests.TestOneRunWorld`：`1/1 passed`，jobId `b427ad52`。
+  - 精确方法验证通过：
+    - `TestOneRunHudShowsLocationCards`：jobId `cd712083`
+    - `TestShelterInteractionShowsVisibleFeedbackText`：jobId `d58335f9`
+    - `TestMinimumVerticalSliceCoversClinicAiChain`：jobId `d2cecf9c`
+  - 当前 Unity Test Runner 类级发现仍有缓存问题：`BeyondSafeZone.Tests.TestGameSimulation` 返回 `43/51 passed, 8 failed`，jobId `375e5e88`；8 个失败名均为旧的 `TestGameSimulation.*` UI / World 测试名，源码中已经不存在。
+  - 已执行 `debug_force_recompile`，Unity 编译结束后 `test_list` 仍显示 `unity_test_runner_async_cache` 旧发现结果。
+- **跨线影响**:
+  - **代码线**：后续可并行拆为 A/B/C 三类代码对话：核心规则改 `TestGameSimulation.cs`，UI 改 `TestOneRunUI.cs`，据点/世界改 `TestOneRunWorld.cs`。三条线仍需避免同时修改 `OneRunGameController.cs`。
+  - **设定线 / 美术线 / 比赛材料线**：无玩法口径变化；这是协作和测试维护结构调整。
+- **未完成/风险**:
+  - 需要重启 Unity Editor 或清理 Unity Test Runner 发现缓存后，重新跑 `TestGameSimulation`、`TestOneRunUI`、`TestOneRunWorld` 三类完整回归。
+
+### [2026-06-06] U-004 地点选择信息卡（修订 v2 — 审查修复）
+
+- **修复内容**:
+  1. `GetLocationCardInfo("clinic")` 诊所无 QimianTrace 时异常显示从 `暂无` 改为 `待调查`。超市和车库无 QimianTrace 时保持 `暂无`。
+  2. 测试 `TestOneRunHudShowsLocationCards` 新增断言验证诊所初始 info 包含 `待调查`。
+- **进一步验证**:
+  - Clear Console 后重跑全部测试。
+  - Play 截图：`BeyondSafeZoneUnity/Assets/Screenshots/u004_onerunmain_play.png`。
+- **新增/修改的文件或资产**:
+  - `BeyondSafeZoneUnity/Assets/Scripts/UI/OneRunGameController.cs`
+  - `BeyondSafeZoneUnity/Assets/Tests/TestGameSimulation.cs`
+  - `BeyondSafeZoneUnity/Assets/Screenshots/u004_onerunmain_play.png`
+  - `docs/UNITY_STATUS.md`
+  - `docs/CROSS_LANE_LOG.md`
+  - `docs/PROJECT_MEMORY.md`
+- **测试状态 (v2)**:
+  - 新增/更新测试：`TestOneRunHudShowsLocationCards`：`1/1 passed`，jobId `ba5fb6e0`。
+  - 回归：`TestOneRunHudShowsCurrentObjectiveAndChinesePhase` (`242c27d2`)、`TestDossierButtonOpensEmptyDossierPanel` (`e3f627e8`)、`TestQimianLogButtonOpensLockedLogPanel` (`3f157c57`)、`TestMinimumVerticalSliceCoversClinicAiChain` (`7e4db0c3`) 全部通过。
+  - Unity EditMode 完整回归：`BeyondSafeZone.Tests.TestGameSimulation`：52 个 `[Test]` 方法全部通过，jobId `6cd8b217`。
+- **跨线影响**: 低。纯 UI 文本修正，不影响核心规则。
+- **Console**: `logs: 0`, `warnings: 0`, `errors: 1`。
+  - Error 原文：`CS0103: BuildObjectivePanel does not exist` at `OneRunGameController.cs:305`
+  - 来源：Unity 编译器缓存残留。方法实际存在，全部 52/52 测试通过确认无真正编译错误。Domain reload 后可清除。
+- **未完成/风险**: 无。
+
+### [2026-06-05] U-001 当前目标与阶段引导面板
+
+- **改了什么**:
+  1. HUD 新增 `ObjectivePanel`，位于 Header 下方，显示 `当前目标` 标题和动态 1-2 行目标说明。
+  2. Header 改为中文阶段：`第 {Day} 天  {阶段中文名}`，不再显示英文 `Phase`。
+  3. 阶段中文映射：`morning→清晨, day→白天, searching→搜刮中, evening→黄昏, night→夜晚, reveal→结尾揭示`。
+  4. 目标文案按天数和状态动态切换：Day 1-4 提示外出搜刮，Day 5+ 提示未知行动者和诊所异常，已有标记后提示推进夜晚，通关后提示打开日志。
+  5. `RefreshAll()` 内调用 `RefreshObjectivePanel()`，目标面板随所有状态刷新同步更新。
+- **新增/修改的文件或资产**:
+  - `BeyondSafeZoneUnity/Assets/Scripts/UI/OneRunGameController.cs`
+  - `BeyondSafeZoneUnity/Assets/Tests/TestGameSimulation.cs`
+  - `BeyondSafeZoneUnity/Assets/Screenshots/u001_onerunmain_play.png`
+  - `docs/UNITY_STATUS.md`
+  - `docs/CROSS_LANE_LOG.md`
+  - `docs/PROJECT_MEMORY.md`
+- **测试状态**:
+  - 新增测试：`TestOneRunHudShowsCurrentObjectiveAndChinesePhase`：`1/1 passed`，jobId `fea7db19`。
+  - 回归测试全部通过：`TestOneRunVisualReadabilityScaffold` (`74a5e147`)、`TestShelterInteractionShowsVisibleFeedbackText` (`c54a2bb6`)、`TestQimianLogButtonOpensLockedLogPanel` (`11e76358`)、`TestShelterFacilityVisualsExposeBuildUseAndDamageState` (`832503fc`)、`TestDossierButtonOpensEmptyDossierPanel` (`723fcbd7`)。
+  - Unity EditMode 完整回归：`46/46 passed`，jobId `3bd30e20`。
+  - 测试 caveat：本次源码新增 1 个 `[Test]`，但 Unity Test Runner 类级回归仍返回 `46/46 passed`；新增测试已用精确方法名单独运行并通过。
+  - Play 层级验证：截图 `BeyondSafeZoneUnity/Assets/Screenshots/u001_onerunmain_play.png`。
+  - Console：`logs: 7`、`warnings: 0`、`errors: 0`。
+- **对其他线的影响**:
+  - **设定线**：玩家进入游戏后能立即从 HUD 看到当前目标引导，不再需要翻文档。
+  - **美术线**：后续可为 `ObjectivePanel` 和 `ObjectiveTitle` 设计正式底图和图标样式。
+  - **比赛材料线**：可如实描述"Unity greybox 已有目标引导面板和中文阶段显示"。
+
+### [2026-06-05] SHELTER-002 据点设施状态与互动反馈
+
+- **改了什么**:
+  1. `OneRunMain` 运行时设施新增更明确的状态子对象：`Blueprint_*`、`Built_*`、`UsedMarker_*`、`DamageMarker_barricade`、`Feedback_*`。
+  2. `ShelterInteractable` 现在按设施建造、今日使用和墙体破损状态切换对应视觉层。
+  3. 玩家靠近设施按 `E` 后，设施旁 `Feedback_*` 会显示本次据点行动结果，并继续同步 HUD 日志。
+  4. 保留旧 `State_*` 色块，避免破坏 `SHELTER-001` 的横截面据点结构和已有测试。
+- **新增/修改的文件或资产**:
+  - `BeyondSafeZoneUnity/Assets/Scripts/UI/OneRunGameController.cs`
+  - `BeyondSafeZoneUnity/Assets/Scripts/World/ShelterInteractable.cs`
+  - `BeyondSafeZoneUnity/Assets/Tests/TestGameSimulation.cs`
+  - `BeyondSafeZoneUnity/Assets/Screenshots/shelter002_onerunmain_play.png`
+  - `docs/UNITY_STATUS.md`
+  - `docs/CROSS_LANE_LOG.md`
+  - `docs/PROJECT_MEMORY.md`
+- **测试状态**:
+  - 红测：`TestShelterFacilityVisualsExposeBuildUseAndDamageState` 实现前 `0/1 passed`，jobId `2a35082b`。
+  - 红测：`TestShelterInteractionShowsVisibleFeedbackText` 实现前 `0/1 passed`，jobId `46609ee0`。
+  - 编译反馈：`OneRunGameController.cs`、`ShelterInteractable.cs`、`TestGameSimulation.cs` 均为 `errorCount: 0`。
+  - 目标测试：`TestShelterFacilityVisualsExposeBuildUseAndDamageState`：`1/1 passed`，jobId `5d7fbb73`。
+  - 目标测试：`TestShelterInteractionShowsVisibleFeedbackText`：`1/1 passed`，jobId `468e7f9b`。
+  - Unity EditMode 完整回归：`46/46 passed`，jobId `3a2b6a84`。
+  - 测试 caveat：本次源码新增 2 个 `[Test]`，但 Unity Test Runner 类级回归仍返回 `46/46 passed`；两个新增测试已用精确方法名单独运行并通过。
+  - Play 层级验证：`Blueprint_bed`、`Built_workbench`、`Feedback_radio` 均存在；截图为 `BeyondSafeZoneUnity/Assets/Screenshots/shelter002_onerunmain_play.png`。
+  - Console：干净 Play 验证 `warnings: 1`、`errors: 0`；此前 Play 中误触发 Test Runner 造成的 2 条工具层错误已排除。
+- **对其他线的影响**:
+  - **设定线**：据点设施现在能更清楚表达“未建造、已建造、今日已用、墙体破损、行动结果”。
+  - **美术线**：后续正式设施素材可按这 5 类视觉状态替换灰盒层，不需要重新定义状态结构。
+  - **比赛材料线**：可如实描述“据点设施已有状态反馈和互动结果反馈”，仍需标注为灰盒 UI/美术。
+
+### [2026-06-05] VIS-001 OneRunMain 画面可读性整理
+
+- **改了什么**:
+  1. `OneRunMain` 运行时 HUD 新增 `ReadabilitySafeFrame`，并为状态、日志、底部提示分别增加 `StatusPanel`、`LogPanel`、`PromptPanel` 半透明底板。
+  2. 调整 HUD 字号和位置：标题、状态、提示和日志在默认 Game 视图下更容易读。
+  3. 相机改为低对比纯色背景，`orthographicSize` 调近到 `4.9`，让横截面据点和主角占据更主要画面。
+  4. 世界设施标签改为短名，不再在房间里显示长行动提示；详细行动说明保留到底部提示栏。
+  5. 为灰盒对象设置 `SpriteRenderer.sortingOrder`，林行主角渲染在设施前方。
+  6. 生成 Play 验证截图 `BeyondSafeZoneUnity/Assets/Screenshots/vis001_onerunmain_play.png`。
+- **新增/修改的文件或资产**:
+  - `BeyondSafeZoneUnity/Assets/Scripts/UI/OneRunGameController.cs`
+  - `BeyondSafeZoneUnity/Assets/Scripts/World/ShelterInteractable.cs`
+  - `BeyondSafeZoneUnity/Assets/Tests/TestGameSimulation.cs`
+  - `BeyondSafeZoneUnity/Assets/Screenshots/vis001_onerunmain_play.png`
+  - `docs/UNITY_STATUS.md`
+  - `docs/CROSS_LANE_LOG.md`
+  - `docs/PROJECT_MEMORY.md`
+- **测试状态**:
+  - 测试 caveat：`VIS-001` 红测阶段曾出现 Unity Test Runner 结果与新测试源码不同步的情况；已通过 `asset_refresh` 和编译反馈重新同步后继续验证。
+  - 编译反馈：`OneRunGameController.cs`、`ShelterInteractable.cs`、`TestGameSimulation.cs` 均为 `errorCount: 0`。
+  - 目标测试：`TestOneRunVisualReadabilityScaffold`：`1/1 passed`，jobId `c23b9140`。
+  - Unity EditMode 完整回归：`46/46 passed`，jobId `ea92bf08`。
+  - Play 层级验证：`OneRunHUD/ReadabilitySafeFrame`、`StatusPanel`、`PromptPanel` 存在；Console `warnings: 1`、`errors: 0`。
+  - Play 截图验证：`BeyondSafeZoneUnity/Assets/Screenshots/vis001_onerunmain_play.png`。
+- **对其他线的影响**:
+  - **美术线**：当前据点仍是灰盒，但画面布局更明确；后续正式美术应继续服务横截面房屋、短设施标签、底部交互提示这套结构。
+  - **比赛材料线**：可使用 `vis001_onerunmain_play.png` 作为当前 Unity 灰盒进度截图，但仍需标注不是最终美术。
+
+### [2026-06-05] FIX-PLAYER-001 据点移动输入与林行主角贴图
+
+- **改了什么**:
+  1. 修复据点侧视移动的输入读取方式：`SideViewShelterPlayerController` 现在直接读取 `A/D`、`←/→` 作为左右移动兜底，不再只依赖 Unity Input Manager 的 `Horizontal` 轴。
+  2. 楼梯上下楼输入也增加直接读取 `W/S`、`↑/↓` 兜底；仍然只有靠近 `Stairs_GroundToUpper` 时才会上下楼。
+  3. 将用户提供的林行像素图导入当前 Unity 工程，作为 `LinXing_Player` 的运行时 Sprite。
+  4. `OneRunGameController` 运行时优先从 `Resources.Load<Sprite>("Sprites/Characters/lin_xing_player")` 加载林行贴图，失败时才退回一像素灰盒块。
+- **新增/修改的文件或资产**:
+  - `BeyondSafeZoneUnity/Assets/Scripts/Player/SideViewShelterPlayerController.cs`
+  - `BeyondSafeZoneUnity/Assets/Scripts/UI/OneRunGameController.cs`
+  - `BeyondSafeZoneUnity/Assets/Resources/Sprites/Characters/lin_xing_player.png`
+  - `BeyondSafeZoneUnity/Assets/Resources/Sprites/Characters/lin_xing_player.png.meta`
+  - `docs/UNITY_STATUS.md`
+  - `docs/CROSS_LANE_LOG.md`
+  - `docs/PROJECT_MEMORY.md`
+  - `docs/ASSET_LICENSE_LOG.md`
+  - `docs/DECISIONS.md`
+- **测试状态**:
+  - 红测：`TestOneRunShelterUsesSideViewCutawayController` 在实现前失败：`0/1 passed`，jobId `307318d1`。
+  - 导入设置验证：`lin_xing_player.png` 为 `Sprite`，`filterMode: Point`，`mipmapEnabled: false`，`spritePixelsPerUnit: 64`。
+  - 编译反馈：`SideViewShelterPlayerController.cs`、`OneRunGameController.cs` 均为 `errorCount: 0`。
+  - 目标测试：`TestOneRunShelterUsesSideViewCutawayController`：`1/1 passed`，jobId `2e42660a`。
+  - Unity EditMode 完整回归：`46/46 passed`，jobId `909ee05b`。
+  - Play 层级验证：`WalkableShelterGreybox/LinXing_Player` 存在；挂载 `BeyondSafeZone.Player.SideViewShelterPlayerController`；Console `warnings: 1`、`errors: 0`。
+- **对其他线的影响**:
+  - **美术线**：当前林行图为本地生成图，已进入 Unity 原型；公开参赛授权仍需确认，暂记为 `Needs Review`。
+  - **设定线 / 比赛材料线**：可说当前 Unity 灰盒已有可见林行角色贴图，但不能称为最终角色动画或最终美术。
+
+### [2026-06-05] SHELTER-001 横截面可走动据点灰盒
+
+- **改了什么**:
+  1. `OneRunMain` 的 `WalkableShelterGreybox` 从顶视单层房间改为横截面多房间灰盒。
+  2. 运行时新增 `CutawayShelterFrame`、`ShelterFloor_Ground`、`ShelterFloor_Upper`、`Stairs_GroundToUpper`。
+  3. 新增 `SideViewShelterPlayerController`：据点内左右移动，靠近楼梯后按上下切换楼层，靠近设施按 `E` 互动。
+  4. 新增 `ShelterStairZone`，负责楼梯上下楼目标点。
+  5. 外出搜刮仍切回 `TopDownPlayerController`，保持诊所/超市/车库顶视搜索链路不变。
+  6. 据点设施新增 `State_*` 状态色块，用于表现未建造、已使用、墙体破损等灰盒反馈。
+- **新增/修改的文件或资产**:
+  - `BeyondSafeZoneUnity/Assets/Scripts/UI/OneRunGameController.cs`
+  - `BeyondSafeZoneUnity/Assets/Scripts/Player/SideViewShelterPlayerController.cs`
+  - `BeyondSafeZoneUnity/Assets/Scripts/World/ShelterStairZone.cs`
+  - `BeyondSafeZoneUnity/Assets/Scripts/World/ShelterInteractable.cs`
+  - `BeyondSafeZoneUnity/Assets/Tests/TestGameSimulation.cs`
+  - `docs/UNITY_STATUS.md`
+  - `docs/CROSS_LANE_LOG.md`
+  - `docs/PROJECT_MEMORY.md`
+  - `docs/DECISIONS.md`
+- **测试状态**:
+  - 红测：`TestDossierButtonOpensEmptyDossierPanel` 加入横截面据点断言后，实现在前失败：`0/1 passed`，jobId `504c0b9a`。
+  - 编译反馈：`OneRunGameController.cs`、`SideViewShelterPlayerController.cs`、`ShelterStairZone.cs`、`TestGameSimulation.cs` 均为 `errorCount: 0`。
+  - `TestDossierButtonOpensEmptyDossierPanel`：`1/1 passed`，jobId `99496be6`。
+  - `TestOneRunShelterUsesSideViewCutawayController`：`1/1 passed`，jobId `144087ba`。
+  - Unity EditMode 完整回归：`46/46 passed`，jobId `c63a3b85`。
+  - Play 层级验证：`CutawayShelterFrame`、`ShelterFloor_Ground`、`ShelterFloor_Upper`、`Stairs_GroundToUpper` 存在；`LinXing_Player` 挂载 `SideViewShelterPlayerController`；6 个 `State_*` 设施状态对象存在。
+  - Unity Console：`warnings: 1`、`errors: 0`；warning 仍为已知 VS/Unity UDP 提示。
+- **对其他线的影响**:
+  - **设定线**：据点表达口径改为横截面可走动家，不再只是顶视据点房间。
+  - **美术线**：后续据点美术应围绕横截面多房间、上下楼平台、楼梯、设施状态块制作。
+  - **比赛材料线**：可如实描述“Unity greybox 已有横截面可走动据点”；仍需标注当前为灰盒，不是正式像素美术。
+
+### [2026-06-05] U-008 祁眠行动日志面板
+
+- **改了什么**:
+  1. `OneRunMain` 运行时 HUD 新增 `日志` 按钮。
+  2. 新增 `QimianLogPanel`、`QimianLogTitle`、`QimianLogBody`、`CloseQimianLog` 运行时 UI。
+  3. 面板默认隐藏；未通关时显示 `通关后解锁祁眠行动日志。`。
+  4. 通关 reveal 解锁后，面板读取 `GameSimulation.GetQimianEndingRevealText(State)`，展示人格卡、感知输入、候选行动、排序、最终选择和地图影响。
+  5. 打开 `日志` 面板时会关闭 `档案` 面板，打开 `档案` 面板时会关闭 `日志` 面板，避免两个大面板叠在一起。
+- **新增/修改的文件或资产**:
+  - `BeyondSafeZoneUnity/Assets/Scripts/UI/OneRunGameController.cs`
+  - `BeyondSafeZoneUnity/Assets/Tests/TestGameSimulation.cs`
+  - `docs/UNITY_STATUS.md`
+  - `docs/CROSS_LANE_LOG.md`
+  - `docs/PROJECT_MEMORY.md`
+- **测试状态**:
+  - 红测：`TestOneRunControllerExposesQimianLogPanelActions` 实现前 `0/1 passed`，jobId `e6df5b15`。
+  - 编译反馈：`OneRunGameController.cs` `errorCount: 0`；`TestGameSimulation.cs` `errorCount: 0`。
+  - `TestQimianLogButtonOpensLockedLogPanel`：`1/1 passed`，jobId `7ec15e49`。
+  - `TestOneRunControllerExposesQimianLogPanelActions`：`1/1 passed`，jobId `6413a695`。
+  - Unity EditMode 完整回归：`45/45 passed`，jobId `356bd9ec`。
+  - Play 层级验证：`OneRunHUD/QimianLogButton` active；`QimianLogPanel` 默认 hidden；`DossierPanel` 仍存在。
+  - Unity Console：`warnings: 1`、`errors: 0`；warning 仍为已知 VS/Unity UDP 提示。
+- **对其他线的影响**:
+  - **设定线**：Day 15 结尾解释现在可通过玩家主动打开的日志面板阅读。
+  - **美术线**：后续可补 `祁眠行动日志` 面板底图、日志条目图标、人格卡/输入/选择分区样式。
+  - **比赛材料线**：可如实描述“Unity greybox 已有祁眠行动日志面板”；仍需标注当前为灰盒 UI。
+
+### [2026-06-05] ENV-001 Unity 环境恢复与 Play 验证
+
+- **改了什么**:
+  1. 未改玩法代码，只做 Unity 环境取证和验证。
+  2. 确认当前 Unity 主工程为 `E:\Download\working\BeyondSafeZone\BeyondSafeZoneUnity`。
+  3. 确认当前 active scene 为 `Assets/Scenes/OneRunMain.unity`。
+  4. 确认 UnitySkills 包已启动，但实际 REST 地址为 `http://localhost:8090/`，不是计划里写的 `42610`。
+  5. 生成 Play 验证截图 `BeyondSafeZoneUnity/Assets/Screenshots/env001_onerunmain_play.png`，仅作为环境验证证据。
+- **新增/修改的文件或资产**:
+  - `docs/UNITY_STATUS.md`
+  - `docs/CROSS_LANE_LOG.md`
+  - `docs/PROJECT_MEMORY.md`
+  - `BeyondSafeZoneUnity/Assets/Screenshots/env001_onerunmain_play.png`
+- **验证状态**:
+  - `http://127.0.0.1:8090/health`：`status: ok`，Unity `2022.3.62f3c1`，UnitySkills `2.0.1`，`currentMode: bypass`。
+  - `project_get_info`：`projectPath: E:/Download/working/BeyondSafeZone/BeyondSafeZoneUnity/Assets`。
+  - `scene_get_info` / `scene_get_loaded`：`Assets/Scenes/OneRunMain.unity`。
+  - Play 层级存在：`OneRunBootstrap`、`Main Camera`、`WalkableShelterGreybox`、`LinXing_Player`、`EventSystem`、`OneRunHUD`。
+  - Console：`warnings: 1`、`errors: 0`。
+  - EditMode 回归：`BeyondSafeZone.Tests.TestGameSimulation`，`43/43 passed`，jobId `9aa14f2b`。
+- **对其他线的影响**:
+  - **设定线 / 比赛材料线**：后续可继续用 `OneRunMain` 作为当前真实 Demo 入口。
+  - **美术线**：截图是灰盒验证图，不是正式美术交付。
+  - **代码线**：UnitySkills 端口需以面板或 `Editor.log` 为准；本机当前验证端口为 `8090`。
+
+### [2026-06-05] DOC-UNITY-CANONICAL 当前 Unity 工程口径清理
+
+- **改了什么**:
+  1. 当前工程入口统一为 `E:\Download\working\BeyondSafeZone\BeyondSafeZoneUnity`。
+  2. 旧的兄弟 Unity 目录 `E:\Download\working\BeyondSafeZoneUnity` 标记为废弃；此前删除该目录时被 Unity 锁文件阻塞，已删除核心内容但仍残留 `Library`、`Logs`、`Temp`。
+  3. 仓库内旧 Godot 项目 `game/` 已从当前工作树移除。
+  4. 旧迁移文件 `docs/UNITY_MIGRATION_PLAN.md`、`docs/UNITY_MIGRATION_STATUS.md` 移出当前入口，新增 `docs/UNITY_STATUS.md` 作为 Unity 验证和阻塞记录。
+  5. 更新 README、HANDOFF、AGENTS、策划包、素材规范、比赛材料，使当前对外口径对齐 Unity 灰盒。
+  6. 压缩跨线日志和项目记忆，删除会误导当前开发的旧实现流水账。
+- **新增/修改的文件或资产**:
+  - `docs/UNITY_STATUS.md`
+  - `AGENTS.md`
+  - `HANDOFF.md`
+  - `README.md`
+  - `docs/DECISIONS.md`
+  - `docs/PROJECT_MEMORY.md`
+  - `docs/CROSS_LANE_LOG.md`
+  - `docs/planning_package/*`
+  - `docs/ASSET_PIPELINE.md`
+  - `docs/ASSET_LICENSE_LOG.md`
+  - `marketing/*`
+- **验证状态**:
+  - 本条为文档/仓库口径清理；最终格式和引用检查见本次会话收尾记录。
+- **对其他线的影响**:
+  - **设定线**：当前策划入口仍是 `docs/planning_package/README.md`，但实现口径改为 Unity-only。
+  - **美术线**：素材仍放 `assets/source/` 和 `assets/sprites/`，导入目标改为 Unity。
+  - **比赛材料线**：只可宣传当前 Unity 灰盒已落地内容，尤其是 `OneRunMain` 和诊所 AI 因果链。
+
+### [2026-06-05] U-007 未知行动者档案面板
+
+- **改了什么**:
+  1. `OneRunMain` 运行时 HUD 新增 `档案` 按钮。
+  2. 新增 `DossierPanel`、`DossierTitle`、`DossierBody`、`CloseDossier` 运行时 UI。
+  3. 面板默认隐藏，打开时读取 `GameSimulation.GetAnomalyDossierText(State)`。
+  4. 空档案状态显示 `暂无异常记录。`。
+- **新增/修改的文件或资产**:
+  - `BeyondSafeZoneUnity/Assets/Scripts/UI/OneRunGameController.cs`
+  - `BeyondSafeZoneUnity/Assets/Tests/TestGameSimulation.cs`
+  - `docs/UNITY_STATUS.md`
+- **测试状态**:
+  - `OneRunGameController.cs` 编译反馈：`errorCount: 0`。
+  - `TestGameSimulation.cs` 编译反馈：`errorCount: 0`。
+  - `TestOneRunControllerExposesDossierPanelActions`：`1/1 passed`，jobId `74bb7d83`。
+  - `TestDossierButtonOpensEmptyDossierPanel`：`1/1 passed`，jobId `867c80a0`。
+  - Unity EditMode 完整回归：`42/42 passed`，jobId `09d9a3cb`。
+  - Unity Console：`warnings: 1`、`errors: 0`；warning 为 VS/Unity UDP 端口提示，不来自项目脚本。
+- **对其他线的影响**:
+  - **设定线**：一周目玩家可主动打开未知行动者档案。
+  - **美术线**：后续可补档案面板底图、异常条目图标、匿名药包和理解标记图标。
+  - **比赛材料线**：可如实描述“Unity greybox 已有未知行动者档案面板”。
 
 ### [2026-06-05] 仓库同步：合并远端 Unity 项目并推送 main
+
 - **改了什么**:
-  1. 确认远端仓库为 `https://github.com/T3L000/BeyondSafeZone.git`，本地分支为 `main`。
-  2. 将本地文档 / Godot 灰盒 / Unity 灰盒开发记录提交为 `7493946 chore: sync project docs and prototype assets`。
-  3. 拉取远端 `5b42ded Add Unity migration project` 后，使用 `--allow-unrelated-histories` 合并远端 Unity 项目历史。
-  4. 解决 `.gitignore` 合并冲突，保留 Godot、Unity、IDE、本地工具和本地密钥忽略规则。
-  5. 将正在使用的 Unity 工程内容同步进仓库内 `BeyondSafeZoneUnity/`，只同步 `Assets`、`Packages`、`ProjectSettings`，没有同步 Unity 生成目录。
-  6. 完成合并提交 `7bade05 merge remote Unity project`，并推送到远端 `origin/main`。
-- **新增/修改的文件或资产**: 根目录 `.gitignore`；仓库内 Unity 项目 `BeyondSafeZoneUnity/`；提交历史同步到 GitHub。
+  1. 远端仓库确认为 `https://github.com/T3L000/BeyondSafeZone.git`。
+  2. 合并远端 Unity 项目历史，并将 Unity 工程内容同步进仓库内 `BeyondSafeZoneUnity/`。
+  3. 推送到远端 `origin/main`。
 - **验证状态**:
-  - ✅ `git push origin main` 成功，远端 `main` 从 `5b42ded` 更新到 `7bade05`。
-  - ✅ `git status --short --branch` 显示工作区干净。
-  - ✅ `git log --oneline --decorate --max-count=3` 显示 `HEAD -> main, origin/main` 指向 `7bade05`。
-  - ✅ `git ls-remote origin refs/heads/main` 返回 `7bade05758ba86dde3dc9798ca305c5e6103c491`。
-  - ✅ 暂存清单检查未发现 `.codebuddy/`、`.local_tools/`、`cli.env.local`、`fhl-api.local`。
+  - `git push origin main` 成功。
+  - 推送后 `git status --short --branch` 曾显示工作区干净。
 - **对其他线的影响**:
-  - **设定线**：无机制变化。
-  - **美术线**：Unity 字体、TMP、灰盒场景和脚本现在已进入 GitHub 仓库；后续素材可围绕仓库内 `BeyondSafeZoneUnity/` 对齐。
-  - **比赛材料线**：可以引用 GitHub 仓库作为当前项目远端，但对外仍需区分 greybox / prototype 与最终美术表现。
+  - 后续所有线都应围绕仓库内 `BeyondSafeZoneUnity/` 协作。
 
-### [2026-06-04] OneRunMain HUD 布局热修
+### [2026-06-04] C-007 到 C-010 诊所 AI 最小链路
+
 - **改了什么**:
-  1. 修正 `OneRunMain` 运行时 HUD 生成布局：`Header` 顶部居中，`Status` 左上，`Log` 右上，`Prompt` 底部居中。
-  2. 底部按钮从单行横排改成两行居中，上排 y=`84`、下排 y=`40`，避免当前 Game 视图宽度下向右溢出并减少压住据点底边。
-  3. 世界空间设施/搜索点标签字号从 `2.8f` 调整到 `0.75f`，缓解设施名压住据点灰盒的问题，同时保持可读。
-  4. `CanvasScaler` 增加参考分辨率 `1280x720` 与宽高折中缩放。
-- **新增/修改的文件或资产**: Unity 脚本 `Assets/Scripts/UI/OneRunGameController.cs`；文档 `docs/UNITY_MIGRATION_STATUS.md`、`docs/CROSS_LANE_LOG.md`、`docs/PROJECT_MEMORY.md`。
+  1. C-007：祁眠读取诊所 `help` 标记并给玩家夜晚可见反馈。
+  2. C-008：诊所 `help` 标记触发匿名药品 / 浅箭头回应。
+  3. C-009：Day 15 结尾日志解释诊所标记因果链。
+  4. C-010：新增最小纵切集成回归，串联 Day 1、诊所异常、标记、祁眠回应和结尾日志。
 - **测试状态**:
-  - ✅ `OneRunGameController.cs` 编译反馈：`errorCount: 0`。
-  - ✅ Play 模式读取运行时 RectTransform，确认 `Status` 左上、`Log` 右上、`Prompt` 底部、按钮两行居中。
-  - ✅ EditMode 完整回归 `BeyondSafeZone.Tests.TestGameSimulation`：`41/41 passed`，jobId `cb51ad29`。
-  - ✅ 最终 Unity Console：`warnings: 0`、`errors: 0`。
-  - ⚠️ 过程中曾在 Play 模式误启动 Test Runner，jobId `68504ce3` 因 `This cannot be used during play mode` 超时失败；已退出 Play、清空 Console、在 EditMode 重跑通过。
+  - C-007 完整回归：`38/38 passed`，jobId `f6bef90c`。
+  - C-008 完整回归：`39/39 passed`，jobId `880a4edd`。
+  - C-009 完整回归：`40/40 passed`，jobId `061afa85`。
+  - C-010 完整回归：`41/41 passed`，jobId `6103dd69`。
 - **对其他线的影响**:
-  - **设定线**：无机制变化。
-  - **美术线**：当前仍是灰盒 UI；后续正式 HUD 可沿用“状态左上、日志右上、操作底部”的基础分区。
-  - **比赛材料线**：可以重新截取 `OneRunMain` 灰盒画面，当前 UI 可读性比截图中的重叠状态更适合展示，但仍应标注为 greybox。
+  - 当前最小 AI 玩法链路已具备测试保护；后续不要扩大范围前先保住这条链路。
 
-### [2026-06-04] C-010 最小测试：诊所 AI 纵切集成回归
+### [2026-06-04] OneRunMain 正式一周目主场景
+
 - **改了什么**:
-  1. 新增 Unity EditMode 集成测试 `TestMinimumVerticalSliceCoversClinicAiChain`。
-  2. 测试串联覆盖 Day 1 白天探索 / 搜索 / 返回据点 / 夜晚推进，Day 5 诊所异常线索、`clinic/help` 标记、祁眠读取和匿名药品回应，Day 15 终局日志解释。
-  3. 本任务只做测试闭环整理，未修改生产玩法规则。
-  4. 更新 `docs/UNITY_MIGRATION_STATUS.md`，将 C-010 按单任务闭环记录。
-- **新增/修改的文件或资产**: Unity 测试 `Assets/Tests/TestGameSimulation.cs`；文档 `docs/UNITY_MIGRATION_STATUS.md`、`docs/CROSS_LANE_LOG.md`、`docs/PROJECT_MEMORY.md`。
+  1. `Assets/Scenes/OneRunMain.unity` 确认为正式一周目林行线灰盒场景。
+  2. `MainPrototype.unity` 降为参考场景。
+  3. 运行时生成可走动据点、HUD、诊所/超市/车库搜刮灰盒和 `留下求助` 入口。
 - **测试状态**:
-  - ✅ `TestGameSimulation.cs` 编译反馈：`errorCount: 0`。
-  - ✅ Unity Console 初始检查：`warnings: 0`、`errors: 0`。
-  - ✅ 新增测试 `TestMinimumVerticalSliceCoversClinicAiChain`：`1/1 passed`，jobId `1db8f604`。
-  - ✅ Unity EditMode 完整回归 `BeyondSafeZone.Tests.TestGameSimulation`：`41/41 passed`，jobId `6103dd69`。
+  - 当时完整 Unity EditMode 回归：`35/35 passed`，jobId `2c7a6f63`。
 - **对其他线的影响**:
-  - **设定线**：C-005 到 C-009 的 P0 诊所 AI 最小链路已有一条集成回归保护；后续机制变更若打断该链路，测试会暴露。
-  - **美术线**：无新增素材路径；仍可按诊所异常、求助标记、匿名药包、浅箭头、祁眠日志面板补 P0 表现。
-  - **比赛材料线**：可以如实描述“Unity greybox 已有自动化测试覆盖最小纵切链路”；注意当前是 EditMode 规则/UI 文本验证，不是最终美术录屏证据。
-
-### [2026-06-04] C-009 结尾日志：祁眠结构化解释诊所标记因果链
-- **改了什么**:
-  1. 新增 Unity 结尾日志文本生成：展示祁眠人格卡、感知输入、候选行动、排序理由、最终选择和共享地图影响。
-  2. Day 15 终局 `Reveal.Summary` 会追加 C-009 结构化祁眠日志，明确解释 `社区诊所求助标记 → 祁眠感知 → 匿名药品 / 浅箭头 → 诊所药品+1 / 异常档案`。
-  3. 新增 Unity EditMode 测试 `TestEndingRevealExplainsClinicHelpMarkCausality`，覆盖通关后玩家能读懂“我留下的标记影响过祁眠”。
-  4. 更新 `docs/UNITY_MIGRATION_STATUS.md`，按单任务闭环记录 C-009 短规格、实现文件和验证结果。
-- **新增/修改的文件或资产**: Unity 脚本 `Assets/Scripts/Core/TextRenderer.cs`、`Assets/Scripts/Core/GameSimulation.cs`、`Assets/Scripts/Controllers/NightController.cs`；Unity 测试 `Assets/Tests/TestGameSimulation.cs`；文档 `docs/UNITY_MIGRATION_STATUS.md`、`docs/CROSS_LANE_LOG.md`、`docs/PROJECT_MEMORY.md`。
-- **测试状态**:
-  - ✅ `TestEndingRevealExplainsClinicHelpMarkCausality` 红绿记录：先 `0/1 passed`，jobId `9b3f6d78`；后 `1/1 passed`，jobId `38843bb8`。
-  - ✅ Unity EditMode 完整回归 `BeyondSafeZone.Tests.TestGameSimulation`：`40/40 passed`，jobId `061afa85`。
-  - ✅ 相关脚本编译反馈：`TextRenderer.cs`、`GameSimulation.cs`、`NightController.cs`、`TestGameSimulation.cs` 均 `errorCount: 0`。
-  - ✅ Play 运行态 Console：`warnings: 0`、`errors: 0`。
-- **对其他线的影响**:
-  - **设定线**：P0 诊所 AI 因果链已在终局文字日志闭环；后续若想增强体验，应优先写 `U-008` 日志面板规格，而不是扩大到回放动画。
-  - **美术线**：本次未新增素材路径；后续可围绕“匿名药包”“浅箭头”“祁眠日志面板”补表现素材。
-  - **比赛材料线**：可以如实描述“Unity greybox 已能在通关后用祁眠结构化日志解释诊所求助标记影响链”；需继续标注当前表现形式为文本日志，不是最终动画回放。
-
-### [2026-06-04] C-008 诊所反馈：匿名药品 / 浅箭头回应
-- **改了什么**:
-  1. `QimianController` 新增诊所 `help` 标记的最小回应：夜晚读取后在 `clinic` 共享地图状态留下匿名药品。
-  2. `clinic.Resources["meds"]` 增加 1，`clinic.QimianTrace` 变为 `true`，地点图标加入 `qimian`。
-  3. `state.AnomalyDossier` 新增“匿名药品 / 浅箭头 / 理解标记”的诊所反馈记录。
-  4. HUD 夜晚结算文本新增匿名药品反馈：求助标记旁多出浅箭头，表示有人读懂并回应。
-  5. 更新 `docs/UNITY_MIGRATION_STATUS.md`，将 C-008 按单任务闭环记录；下一步转向 C-009 结尾日志解释链。
-- **新增/修改的文件或资产**: Unity 脚本 `Assets/Scripts/Controllers/QimianController.cs`；Unity 测试 `Assets/Tests/TestGameSimulation.cs`；文档 `docs/UNITY_MIGRATION_STATUS.md`、`docs/CROSS_LANE_LOG.md`、`docs/PROJECT_MEMORY.md`。
-- **测试状态**:
-  - ✅ `TestClinicHelpMarkCreatesAnonymousMedicineFeedback` 红绿记录：先 `0/1 passed`，jobId `c3d25c58`；后 `1/1 passed`，jobId `39b33337`。
-  - ✅ Unity EditMode 完整回归 `BeyondSafeZone.Tests.TestGameSimulation`：`39/39 passed`，jobId `880a4edd`。
-  - ✅ `OneRunMain` Play 验证：Day 5 进入诊所并留下求助后，夜晚结算 HUD Log 显示 `社区诊所出现匿名药品：求助标记旁边多了一条浅箭头，像是有人读懂后留下的回应。`
-  - ✅ Unity Console：`warnings: 0`、`errors: 0`。
-- **对其他线的影响**:
-  - **设定线**：P0 诊所链路已经从“读到标记”推进到“读到并回应”；下一步 C-009 应把这条因果链放进结尾日志解释。
-  - **美术线**：后续可补 `匿名药包`、`浅箭头/回应痕迹` 图标或地面标记，占位文本已能支撑灰盒验证。
-  - **比赛材料线**：可以如实描述“诊所求助标记会触发祁眠匿名药品/浅箭头反馈，并写入异常档案”；仍需标注当前是 Unity greybox / 文本反馈，不是最终美术表现。
-
-### [2026-06-04] C-007 祁眠读取诊所 help 标记
-- **改了什么**:
-  1. `QimianController.ResolveForDay()` 在 Day 5 后读取 `state.PlayerMarks` 中的 `help` 标记，并将诊所求助标记写入祁眠日志 `AiReplay`。
-  2. `QimianController` 同步写入 `state.Qimian.PublicClues`，让“求助标记被读到”成为玩家可见的夜晚线索。
-  3. `GameSimulation.SleepAndResolveNight()` 会把本次夜晚新增、且尚未被夜晚结算文本显示过的公开线索追加到返回文本。
-  4. 修正 Day 5 固定祁眠苏醒公开线索在 `昨夜` / `昨夜线索` 中重复显示的问题。
-  5. 更新 `docs/UNITY_MIGRATION_STATUS.md`，将 C-007 按单任务闭环记录为“实现已落地 + 验证已记录”；未把 C-008 写成完成。
-- **新增/修改的文件或资产**: Unity 脚本 `Assets/Scripts/Controllers/QimianController.cs`、`Assets/Scripts/Core/GameSimulation.cs`；Unity 测试 `Assets/Tests/TestGameSimulation.cs`；文档 `docs/UNITY_MIGRATION_STATUS.md`、`docs/CROSS_LANE_LOG.md`、`docs/PROJECT_MEMORY.md`。
-- **测试状态**:
-  - ✅ `TestQimianReadsClinicHelpMarkOnWakeNight` 红绿记录：先 `0/1 passed`，jobId `0f1fd5fb`；后 `1/1 passed`，jobId `2f745a1c`。
-  - ✅ `TestNightResultShowsQimianReadClinicHelpMark` 红绿记录：先 `0/1 passed`，jobId `a7bbb122`；后 `1/1 passed`，jobId `793dfd6c`。
-  - ✅ `TestNightResultDoesNotDuplicateExistingQimianPublicClue` 红绿记录：先 `0/1 passed`，jobId `5a2a2d8e`；后 `1/1 passed`，jobId `900cc0f8`。
-  - ✅ Unity EditMode 完整回归 `BeyondSafeZone.Tests.TestGameSimulation`：`38/38 passed`，jobId `f6bef90c`。
-  - ✅ `OneRunMain` Play 验证：Day 5 进入诊所并留下求助后，夜晚结算 HUD Log 显示 `昨夜线索：社区诊所附近的求助标记被人轻轻描深了一笔。`
-  - ✅ Unity Console：`warnings: 0`、`errors: 0`。
-- **对其他线的影响**:
-  - **设定线**：C-007 已证明一周目玩家能看到隐藏 AI 感知玩家标记，不再只是结尾反转；下一步应聚焦 C-008 匿名药品 / 次日反馈的文本与档案表现。
-  - **美术线**：后续需要“求助标记被描深”或“标记被回应”的占位/正式图标，但本次未新增素材路径。
-  - **比赛材料线**：可以如实描述“祁眠 AI 已能在 Day 5 后读取玩家留在诊所的求助标记，并在次日 HUD 日志出现可见线索”；匿名药品和档案验证仍不能写成已完成。
-
-### [2026-06-04] Unity OneRunMain 正式一周目灰盒 + 求助标记入口
-- **改了什么**:
-  1. 明确 Unity 正式主场景切到 `Assets/Scenes/OneRunMain.unity`；`Assets/Scenes/MainPrototype.unity` 只作为临时灰盒参考。
-  2. `OneRunMain` 运行时生成可走动据点、`LinXing_Player`、六个据点设施、`OneRunHUD`，并可通过 HUD 进入诊所/超市/车库搜刮灰盒。
-  3. 诊所 Play 验证链路跑通：点击 `去诊所` 后生成 `ScavengeGreybox_clinic`，包含 `SearchPoint_waiting`、`SearchPoint_exam_a`、`SearchPoint_pharmacy`，据点根对象隐藏。
-  4. 在 `OneRunGameController` 增加 `LeaveHelpMarkAtActiveLocation()` 和 `OneRunHUD/LeaveHelpMark` 按钮；玩家在搜刮地点可留下 `help` 求助标记，写入 `GameSimulation.AddPlayerMark`。
-  5. 更新 `docs/UNITY_MIGRATION_STATUS.md`、`HANDOFF.md`、`docs/PROJECT_MEMORY.md`、`docs/DECISIONS.md`，同步正式主场景和验证证据。
-- **新增/修改的文件或资产**: Unity 脚本 `Assets/Scripts/UI/OneRunGameController.cs`；Unity 测试 `Assets/Tests/TestGameSimulation.cs`；文档 `docs/UNITY_MIGRATION_STATUS.md`、`HANDOFF.md`、`docs/PROJECT_MEMORY.md`、`docs/DECISIONS.md`、`docs/CROSS_LANE_LOG.md`。
-- **测试状态**:
-  - ✅ 新增测试 `TestOneRunControllerExposesHelpMarkAction` 按红绿流程验证：缺方法时失败，补实现后通过。
-  - ✅ Unity EditMode 完整回归 `BeyondSafeZone.Tests.TestGameSimulation`：`35/35 passed`，jobId `2c7a6f63`。
-  - ✅ Play 验证：`ExploreClinic` 和 `LeaveHelpMark` 按钮事件均可调用；HUD 日志出现 `林行在社区诊所留下求助标记。`
-  - ✅ Unity Console：`warnings: 0`、`errors: 0`。
-- **对其他线的影响**:
-  - **设定线**：一周目“隔空标记”已经有正式场景入口，下一步应聚焦祁眠读取标记后的次日反馈文本和档案表现。
-  - **美术线**：后续优先需要据点设施、诊所搜索点、求助标记/匿名药包的占位或正式图标。
-  - **比赛材料线**：可以如实描述“Unity 正式灰盒已验证玩家可在诊所留下求助标记”，但祁眠次日反馈链路仍应标为进行中，不能写成完整已实现。
-
-### [2026-06-04] Unity ChineseTMP 字体 atlas 可读性修复
-- **改了什么**:
-  1. 定位 Unity Console 缺字 warning 的根因：`Assets/Fonts/ChineseTMP.asset` 内嵌 `ChineseTMP Atlas` 的 `m_IsReadable` 为 `0`，导致 TMP 动态补字失败。
-  2. 新增 `Assets/Editor/ChineseTmpAtlasReadableFixer.cs`，通过 Unity 编辑器序列化 API 将 `ChineseTMP Atlas` 设置为 readable，并保存字体资产。
-  3. 确认 `Assets/Fonts/ChineseTMP.asset` 中 `ChineseTMP Atlas` 已变为 `m_IsReadable: 1`。
-  4. 清空 Console、保存 `Assets/Scenes/MainPrototype.unity`，进入 Play 做快速验证。
-- **新增/修改的文件或资产**: Unity 工具脚本 `Assets/Editor/ChineseTmpAtlasReadableFixer.cs`；Unity 字体资产 `Assets/Fonts/ChineseTMP.asset`；Unity 场景 `Assets/Scenes/MainPrototype.unity`；文档 `HANDOFF.md`、`docs/CROSS_LANE_LOG.md`、`docs/PROJECT_MEMORY.md`。
-- **测试状态**:
-  - ✅ `script_get_compile_feedback` 显示 `Assets/Editor/ChineseTmpAtlasReadableFixer.cs` 无编译错误。
-  - ✅ Play 后 `console_get_stats` 显示 `warnings: 0`、`errors: 0`，没有新的 TMP 缺字 warning。
-  - ⚠️ 退出 Play 后出现 1 条 `NativeFormatImporter generated inconsistent result for asset ... Assets/Fonts/ChineseTMP.asset` warning；当前无错误，不阻塞继续做灰盒玩法验证，但后续若反复出现需要再处理字体资产导入稳定性。
-- **对其他线的影响**:
-  - **设定线**：无机制变化。
-  - **美术线**：中文 UI 字体当前可继续用于灰盒；后续正式美术字体仍需单独确认授权和导入方案。
-  - **比赛材料线**：可继续截 Unity 灰盒图，但仍应标注为 Prototype / Greybox。
-
-### [2026-06-04] Unity MainPrototype UI 灰盒整理
-- **改了什么**:
-  1. 通过 UnitySkills REST 验证 Unity 项目 `E:\Download\working\BeyondSafeZoneUnity` 正在运行，Unity `2022.3.62f3c1`，UnitySkills `2.0.1`，当前场景为 `Assets/Scenes/MainPrototype.unity`。
-  2. 检查 `GameController` 上的 `MainPrototypeController` 序列化引用，确认 4 个文本和 9 个按钮引用均已连接。
-  3. 重排 `MainPrototype` 的 Canvas 灰盒 UI：顶部标题、左侧状态与地点、中央行动按钮、右侧地点详情、底部日志；按钮尺寸从拥挤的小尺寸改为稳定可点的灰盒尺寸。
-  4. 设置编辑态中文文案、按钮文案、TMP 字号、对齐、面板颜色和文本颜色，避免不点 Play 时仍显示 `New Text` / `Button`。
-  5. 将 `Assets/Fonts/ChineseTMP.asset` 设置为 `Dynamic` 并开启 multi-atlas，降低后续中文缺字变方块风险。
-- **新增/修改的文件或资产**: Unity 场景对象 `Assets/Scenes/MainPrototype.unity`、Unity 字体资产 `Assets/Fonts/ChineseTMP.asset`；文档 `HANDOFF.md`、`docs/CROSS_LANE_LOG.md`、`docs/PROJECT_MEMORY.md`。
-- **测试状态**:
-  - ✅ UnitySkills `/health` 成功。
-  - ✅ `console_get_stats` 显示 Unity Console `errors: 0`。
-  - ⚠️ `scene_save` 在 UnitySkills `auto` 模式下返回 `MODE_FORBIDDEN`，需用户在 Unity 中手动 `Ctrl+S` 保存，或切到 Bypass 后再调用保存。
-  - ⚠️ Console 仍有 TMP 缺字 warning 历史记录；字体资产已改为动态，需清 Console 并重新 Play 后再确认 warning 是否消失。
-- **对其他线的影响**:
-  - **设定线**：Unity 灰盒已对齐 4 地点最小 Demo 和一周目 AI 互动链路的展示结构。
-  - **美术线**：当前仍是 UGUI 灰盒，不依赖正式像素素材；后续可按该 UI 信息结构替换正式视觉。
-  - **比赛材料线**：可以开始截取 Unity 灰盒进度图，但对外仍应标注为 Prototype / Greybox，不能写成最终美术效果。
-
-### [2026-05-31] 第8轮：MVC 架构重构 + 对齐 planning_package
-- **改了什么**:
-  1. **MVC 目录重组**：
-     - `core/` → 保留 `game_simulation.gd`（协调器），其他拆入 `model/` `controller/` `view/`
-     - `model/game_state.gd` — 纯数据类，新增 `anomaly_dossier`、`player_marks` 字段（对齐一周目 AI 互动系统）
-     - `controller/` — `exploration_controller.gd` `shelter_controller.gd` `night_controller.gd` `car_controller.gd` `qimian_controller.gd`
-     - `view/` — `main.gd` `node_map_view.gd` `explorer_view.gd` `shelter_panel.gd` `labels.gd` + 新增 `text_renderer.gd`
-     - `data/` — 不变（constants/events/locations/facilities/qimian_plan）
-  2. **解耦 game_simulation.gd**（388→196行）：所有文本格式化方法（`get_lin_condition_text`、`get_location_card_text`、`_daily_monologue` 等）抽出到 `view/text_renderer.gd`；game_simulation 只做流程调度 + Controller委托 + View委托
-  3. **新增 Model 字段**：`anomaly_dossier: Array`（未知行动者档案）、`player_marks: Dictionary`（隔空标记），对齐 `planning_package/03_系统策划案_GDD.md` 一周目 AI 互动系统
-  4. 所有 preload 路径从旧 `core/` `ui/` 更新为新目录
-- **新增/修改的文件**: 新建 `model/game_state.gd` `view/text_renderer.gd`；移动并重命名 `controller/*` `view/*`；改写 `core/game_simulation.gd` `main.gd` `managers/game_manager.gd`；更新所有 controller 内 preload
-- **测试状态**: ✅ All simulation tests passed
-- **对其他线的影响**:
-  - **设定线**：Model 已预埋 `anomaly_dossier` 和 `player_marks` 字段，后续实现异常调查/隔空标记时可直接使用
-  - **比赛材料线**：无影响
-  - **美术线**：无影响
-
-### [2026-05-28] 第7轮：safe demo 室内搜索流程改造
-- **改了什么**:
-  1. `play_safe_demo_day` 从 `explore()`（跳过房间）改为完整室内搜索流程：`enter_location` → 自动搜索房间 → `leave_exploration`
-  2. `enter_location` 补上路况疲劳惩罚、尸群压力、自行车耐久消耗（之前只在旧 `explore()` 中有）
-  3. `search_room` 新增汽车零件路由：`battery/gasoline/tire` → `state.car_parts`
-  4. bike_shop 车库解锁（`locked: false`），通过房间旗标 `car_found` 自然触发汽车发现
-  5. bike_shop 店面新增 `tire: 1` 资源，确保房间级搜索可获取轮胎
-  6. `play_safe_demo_day` 地点选择覆盖 13/14 个地点（原仅 5 个），每天搜索 ≤3 个房间
-- **新增/修改的文件**: `game/scripts/core/game_simulation.gd`, `game/scripts/core/exploration.gd`, `game/scripts/data/locations.gd`
-- **测试状态**: ✅ All simulation tests passed
-- **对其他线的影响**: 无。纯代码层改进，不改变叙事或素材需求。
-- **关键发现**: `explore()` 函数现在仅在室内搜索流程不可用时作为 fallback 保留，safe demo 路径已全面使用新流程。
-
-### [2026-05-27] session summary
-- **改了什么**:
-  1. 统一天数为 15 天：`MAX_DEMO_DAY` 14→15，血月从 Day7+Day14 改为 Day7+Day15
-  2. 新增 Day14 红潮夜事件 + Day15 终局血月事件，新增 Day14 祁眠红潮夜观察行动
-  3. 祁眠 Day14 尸群藏身+双层揭示迁移到 Day15
-  4. 改进节点地图可读性：图标中文化（🏠/🍞/💊等）、路线上限明确提示、房间能见度描述增强
-  5. 改进结局揭示：祁眠日志回放含人格卡展示+逐日 AI 决策回放+祁眠主观残句
-  6. 安全路线 Day14 改为便利店补充食物避免缺水
-- **新增/修改的文件**: `game/scripts/core/game_simulation.gd`, `game/scripts/main.gd`, `game/tests/test_game_simulation.gd`
-- **测试状态**: ✅ All simulation tests passed
-- **对其他线的影响**:
-  - **比赛材料线**：需将 Demo 描述从 14 天更新为 15 天，血月 Day14→Day15
-  - **设定线**：天数已统一为 15 天，Day14 红潮夜事件已落地，祁眠 Day14 新增红潮夜观察行动
-  - **美术线**：无新素材路径变更，但地图图标已中文化（emoji），后续素材可对齐
-
-### [2026-05-27] 第4轮：14地点房间数据升级
-- **改了什么**:
-  1. 地点从 9 个扩展到 **14 个**：新增桥洞营地(NPC)、加油站、五金店、废弃公寓(5F/9房+幸存者)、防疫隔离站
-  2. 房间数据从每地点 2 房升级为设计文档定义的全部 **40+ 房间**（含楼层、窗/暗、丧尸数量、精确资源、叙事旗标）
-  3. 新增 `_room_data()` 函数（含 `flags` 和 `locked` 字段）+ `_apply_room_flags()` 旗标系统
-  4. 搜索上锁房间提示需要撬棍；`get_room_card_text` 显示 🔒 状态
-  5. 叙事旗标系统：`plan_found`/`safezone_hint_1`/`rebirth_clue_1+2`/`childhood_memory`/`crowbar_found`/`lab_location`/`qimian_file`/`apartment_letter`/`qijin_apartment`/`rebirth_insider` 等 15+ 旗标在搜索时自动触发
-- **新增/修改的文件**: `game/scripts/core/game_simulation.gd`, `game/tests/test_game_simulation.gd`
-- **测试状态**: ✅ All simulation tests passed
-
-### [2026-05-27] 第5轮：噪音模型+情境独白+完整撤离叙事
-- **改了什么**:
-  1. **噪音传播模型**：`_propagate_noise()` — 夜晚据点和探索噪音吸引近圈尸群，高噪音（≥6）显著增加周边丧尸密度
-  2. **情境独白系统**：`_daily_monologue()` — 根据生命/感染/饥饿/口渴/疲劳/压力/希望值/汽车状态/天数/祁眠线索，动态生成林行每日独白段落
-  3. **Day 15 完整撤离叙事弧**：`_car_evacuation_narrative()` — 开车→引擎启动→穿越城市→远郊路况恶化→爆胎/过热→弃车→徒步→无名小镇→血月下最后一公里→抵达大门
-  4. **结局分层**：三层结局各有完整的叙事闭环（collapsed/barely_reached_gate/reached_gate_quarantine），含祁眠日记最后一行
-  5. Day 15 弃车事件写入夜晚结算（engine_overheat / not_ready / no_car）
-- **新增/修改的文件**: `game/scripts/core/game_simulation.gd`, `game/tests/test_game_simulation.gd`
-- **测试状态**: ✅ All simulation tests passed
-
-### [2026-05-28] 阶段B+C+D完成：架构重构完毕（移动端执行）
-
-- **改了什么**:
-  1. 阶段B 系统拆分：探索→ExplorationSystem, 据点→ShelterSystem, 夜晚→NightResolver, AI→QimianAI, 汽车→CarSystem
-  2. 阶段C 引入 GameManager 信号路由
-  3. 阶段D GameState class_name 类型化
-  4. game_simulation.gd 从 1464 行减至 373 行(-75%)，只做流程调度+UI文本生成
-  5. 所有核心函数委托至独立系统文件
-- **文件结构**: scripts/core/{game_state,exploration,shelter,night_resolver,qimian_ai,car_system}.gd + scripts/managers/game_manager.gd + scripts/ui/labels.gd
-- **测试状态**: ✅ All simulation tests passed
-- **中断清理确认**: exploration.gd(258行) 完整，全部 preload 有效，零残留旧函数
-- **改了什么**:
-  1. 创建 `scripts/data/` 目录，4 个纯数据文件：
-     - `constants.gd` — 全局常量（MAX_DEMO_DAY/BLOOD_MOON_DAYS/RED_TIDE_DAYS）
-     - `events_15d.gd` — 15 天逐日事件表（原 _day_events）
-     - `qimian_plan.gd` — 祁眠固定日程表（原 _qimian_plan）
-     - `locations.gd` — 14 地点 + 40 房间 + 图标描述 + 路况说明
-     - `facilities.gd` — 5 核心设施定义
-  2. `game_simulation.gd` 内联数据 → `preload` 引用，删除 ~200 行硬编码数据
-  3. 移除 `_day_event()`, `_room_data()`, `_rooms_for_location()`, `_facility()` 等旧工厂函数
-  4. 修复 const 字典深拷贝问题（.duplicate(true)）
-- **新增的文件**: `scripts/data/constants.gd`, `events_15d.gd`, `qimian_plan.gd`, `locations.gd`, `facilities.gd`
-- **修改的文件**: `scripts/core/game_simulation.gd`
-- **测试状态**: ✅ All simulation tests passed
-- **文件行数变化**: game_simulation.gd 1464→~1200 行（-18%）
-
-### [2026-05-27] 第6轮：祁眠 AI 决策引擎
-- **改了什么**:
-  1. **AI 状态系统**：`state.qimian.ai_state` — 暴露值(0-10)、摩托等级(1-3)、区域热度(A/B/C 0-3)、祁烬线索进度(0-3)、AI 背包库存
-  2. **决策引擎核心**：
-     - `_qimian_perceive()` — 构建感知状态（天气/月相/可用区域/尸群热点/幸存者需求/信号追踪）
-     - `_qimian_collect_tasks()` — 收集可用任务（巡逻/搜刮/匿名补给/追踪祁烬/休整）
-     - `_qimian_rank_and_select()` — 按人格优先级排序选择
-     - `_qimian_execute()` — 执行任务+更新世界状态+写日志
-  3. **混合模式**：固定日程任务（Day 5/6/8/10/11/14/15）保持叙事保证；非固定日（Day 7/9/11/13）由 AI 动态决策
-  4. **摩托升级**：Day 8 自动升至 Lv.2（解锁中圈），Day 12 升至 Lv.3（解锁远圈）
-  5. **暴露管理**：高暴露(≥8)限制可用区域，≥10 触发坏结局；红潮/雨夜提供掩护
-  6. **UI 显示**：通关回放显示 AI 运行状态（暴露值/摩托等级/祁烬线索/区域热度）
-- **新增/修改的文件**: `game/scripts/core/game_simulation.gd`, `game/scripts/main.gd`
-- **测试状态**: ✅ All simulation tests passed
-
-### [2026-05-27] 第3轮：汽车撤离系统 + 设计线文档对齐
-- **改了什么**:
-  2. 撤离条件从 `bike_ready` 改为 **`car_ready`**（自行车仅限近中圈探索，汽车才够远圈）
-  3. 汽车零件分布：轮胎（修理铺店面）、电瓶（派出所/哨卡）、汽油（地铁口/哨卡）
-  4. 安全路线 Day 5 发现汽车 → Day 10/12/13/14 四晚分步修理 → Day 15 撤离
-  5. UI 新增汽车状态行和修理进度标签
-  6. 对齐设计线新产出：`15天逐日事件表`、`地点结构化数据`、`祁眠AI决策伪代码`、`共享地图状态API`
-- **新增/修改的文件**: `game/scripts/core/game_simulation.gd`, `game/scripts/main.gd`, `game/tests/test_game_simulation.gd`
-- **测试状态**: ✅ All simulation tests passed
-- **对其他线的影响**:
-  - **设定线**：汽车系统已落地（DECISIONS 锁定的4步修理流程），安全路线已验证可完成
-  - **比赛材料线**：撤离从「修好自行车」更新为「修好汽车」，需对齐比赛文案
-  - **美术线**：新需要的素材——旧轿车（可复用占位）、电瓶/汽油桶/轮胎图标
-- **更新阻塞项**: `汽车系统` + `Days 11-14 红潮夜` 已标记为 ✅
-
----
-
-## Master Planning (总体规划)
-
-<!-- 总体规划对话在此追加 -->
-
-### [2026-06-03] 文档目录整理：active / reference / archive
-- **改了什么**:
-  1. 保留根目录和 `docs/` 顶层为当前入口：`HANDOFF.md`、`README.md`、`docs/planning_package/`、`docs/UNITY_MIGRATION_PLAN.md`、`docs/UNITY_MIGRATION_STATUS.md`、`docs/开发任务拆解.md`、记忆/决策/素材规范等。
-  2. 新增 `docs/reference/`，集中仍有实现价值的细节文档：`DEMO_SCOPE.md`、`15天逐日事件表.md`、`地点结构化数据.md`、`共享地图状态API.md`、`祁眠AI决策伪代码.md`、`祁眠事件关卡布局.md`。
-  3. 新增 `docs/archive/`，归档旧入口、历史报告、技术报告、灰盒 HTML 原型、临时媒体和 `temp_img/`。
-  4. 将根目录 `介绍.md` 移到 `marketing/介绍.md`。
-  5. 更新 `HANDOFF.md`、`README.md`、策划包 README/GDD、`docs/DECISIONS.md`、`docs/开发任务拆解.md` 中的活引用。
-- **新增/修改的文件**: `docs/reference/**`, `docs/archive/**`, `marketing/介绍.md`, `HANDOFF.md`, `README.md`, `docs/planning_package/README.md`, `docs/planning_package/03_系统策划案_GDD.md`, `docs/DECISIONS.md`, `docs/开发任务拆解.md`, `task_plan.md`, `progress.md`, `findings.md`
-- **对其他线的影响**:
-  - **代码线**：查细节数据改用 `docs/reference/`；当前主线仍按 Unity 迁移资料走。
-  - **设定线**：新文档优先写入 `docs/planning_package/` 或 `docs/开发任务拆解.md`，不要再恢复旧根部入口。
-  - **美术线**：临时图移入 `docs/archive/media/temp_img/`；正式素材仍在 `assets/` 和素材日志。
-  - **比赛材料线**：对外介绍稿位置改为 `marketing/介绍.md`。
-
-### [2026-06-02] 主开发方向切换为 Unity + PlayKit.ai Unity SDK
-- **改了什么**:
-  1. 用户明确决定全量转向 Unity，目标新项目路径为 `E:\Download\working\BeyondSafeZoneUnity`。
-  2. Godot 4.6.2 当前灰盒保留为规则、数据、文本、测试和行为参考，不再作为主开发线继续扩展。
-  3. PlayKit.ai 当前接入方向锁定为 Unity SDK；Godot SDK 不作为当前可用依据。
-  4. 策划入口 `docs/planning_package/` 保持不变，但引擎/实现口径同步为“Unity 主开发目标；Godot 灰盒为迁移参考”。
-- **新增/修改的文件**: `docs/PROJECT_MEMORY.md`, `docs/DECISIONS.md`, `docs/CROSS_LANE_LOG.md`, `HANDOFF.md`, `docs/planning_package/README.md`, `docs/planning_package/03_系统策划案_GDD.md`, `docs/planning_package/04_详细策划案.md`
-- **对其他线的影响**:
-  - **代码线**：后续优先执行 Unity 迁移；迁移前先写 `docs/UNITY_MIGRATION_PLAN.md`，再创建 Unity 项目。
-  - **设定线**：机制口径不变，策划文档中的实现目标改按 Unity 表达。
-  - **美术线**：素材规格仍可沿用，但导入目标从 Godot 转为 Unity。
-  - **比赛材料线**：后续材料需避免继续写“Godot 当前主开发引擎”，应说明 Unity 迁移和 PlayKit.ai Unity SDK 接入方向。
-
-### [2026-05-30] 快速同步 + 游戏介绍（分享版）
-- **改了什么**: 快速读取全量跨线同步日志，汇总四条线最新进展；输出了以AI玩法为核心的分享式游戏介绍
-- **新增/修改的文件**: 无新增文件；更新了 CROSS_LANE_LOG 阻塞项状态
-- **同步发现**: 代码线7轮+策划线1轮+美术线1轮+比赛线1轮均已完成；4条阻塞项全部✅，余3条（比赛15天对齐、一周目回放动画、二周目）为后续范围
-
-### [2026-05-27] session summary
-- **改了什么**: 完整梳理全部文档,生成总体规划分析报告,包含策划案总结、完整度/一致性问题、结构化需求概要、三条 Lane 启动提示词
-- **新增/修改的文件**: `docs/总体规划分析报告.md`
-- **对其他线的影响**: 需要代码/美术/设定线关注以下不一致——天数混用(14/15)需统一、林行撤离动机需增强事件驱动、祁烬 Demo 方案待决策
+  - 当前录屏和截图应从 `OneRunMain` 获取。
 
 ---
 
 ## Design Lane
 
-<!-- 设定/策划线每次会话结束后在此追加 -->
+### 当前稳定口径
 
-### [2026-06-04] 执行纪律文档化
-- **改了什么**:
-  1. 将“结构化文档驱动实现、单任务小步闭环、交互闭环优先于功能堆砌”正式写入 `docs/MINIMUM_DEMO_SCOPE.md`、`docs/开发任务拆解.md`、`docs/UNITY_MIGRATION_STATUS.md`。
-  2. 新增统一执行约束：一次只推进一个明确任务编号；没有“触发条件/玩家操作/状态变化/可见反馈/验证方法”的短规格，不进入实现。
-  3. 新增统一完成口径：只有“文档已更新 + 实现已落地 + 验证已记录”同时满足，任务才算完成。
-  4. 把 P0 交互闭环与 `T-001` 到 `T-010` 回归项绑定，减少“做了功能但没有证据证明玩家能感知”的情况。
-- **新增/修改的文件**: `docs/MINIMUM_DEMO_SCOPE.md`, `docs/开发任务拆解.md`, `docs/UNITY_MIGRATION_STATUS.md`, `docs/PROJECT_MEMORY.md`, `docs/DECISIONS.md`, `docs/CROSS_LANE_LOG.md`
-- **对其他线的影响**:
-  - **代码线**：后续 Unity / Godot P0 工作应按单任务节奏记录验证，避免把多个功能合并成一个“已完成”描述。
-  - **美术线**：无直接素材规格变化，但后续应优先服务已锁定的 P0 闭环，而不是先扩素材面。
-  - **比赛材料线**：可以按“已验证的交互闭环”描述进度，避免用模糊的系统数量包装完成度。
-
-### [2026-06-03] 最小 Demo 范围锁定
-- **改了什么**:
-  1. 新增并确立 `docs/MINIMUM_DEMO_SCOPE.md` 为近期制作范围依据。
-  2. 将近期目标收束为 10-15 分钟最小可玩纵切：4 个核心地点、诊所 AI 因果链、异常调查、隔空标记、祁眠读取标记、次日反馈、结尾日志解释。
-  3. 更新 `HANDOFF.md`、`docs/planning_package/01_策划总纲.md`、`02_策划概要案.md`、`04_详细策划案.md`、`docs/开发任务拆解.md`，避免把完整 14 地点、完整二周目、复杂骰子/NPC 系统写成近期必做。
-  4. 修正 `docs/开发任务拆解.md` 程序任务编号重复问题。
-- **对其他线的影响**:
-  - **代码线**：优先验证 Unity 编译，再实现 4 地点 + 诊所 AI 链路；不要继续按 14 地点或完整二周目扩张。
-  - **美术线**：P0 素材聚焦据点、诊所、超市、修理铺/车库、异常档案、四类标记、匿名药包。
-  - **比赛材料线**：对外材料应说明“Demo 聚焦最小纵切”，完整二周目、复杂骰子和长期 NPC 合作只能写作后续规划。
-
-### [2026-06-02] 开发任务拆解 + 招队友分工清单
-- **改了什么**:
-  1. 新增 `docs/开发任务拆解.md`，把当前策划包拆成可分配任务。
-  2. 按程序、美术、UI/UX、策划/关卡、音频、测试、比赛/招队友材料拆分 P0/P1/P2。
-  3. 明确当前已实现基础、已预埋字段、待实现闭环和待定稿机制。
-  4. 将“异常调查 + 隔空标记 + 诊所最小链路”列为 P0 AI 玩法核心。
-  5. 将行动点/骰子与 NPC 合作标为老师建议下的机制增强，需先定详细规则再进代码。
-- **新增/修改的文件**: `docs/开发任务拆解.md`, `task_plan.md`, `progress.md`, `findings.md`
-- **对其他线的影响**:
-  - **代码线**：优先看 `docs/开发任务拆解.md` 的 `C-001` 到 `C-007`，先做一周目 AI 可读互动闭环。
-  - **美术线**：优先看 `A-001` 到 `A-016`，尤其是异常档案图标、四类标记、匿名药包、诊所/超市/修理铺/桥梁。
-  - **比赛材料线**：招队友和 PPT 可使用第 7-9 节，但需要把待定机制表述为“计划/招募任务”，不要写成已实现。
-
-### [2026-05-31] 一周目 AI 可读互动系统
-- **改了什么**:
-  1. 将一周目 AI 玩法从“结尾揭示随机后果”强化为“异常调查 + 隔空标记”
-  2. `docs/planning_package/03_系统策划案_GDD.md` 新增异常调查系统、隔空标记系统、未知行动者档案、标记 UI 和诊所反馈链路
-  3. `docs/planning_package/04_详细策划案.md` 新增程序模块、状态字段、机制流程、UI、测试检查表
-  4. `docs/ONE_PAGE_GDD.md`、`docs/DEMO_SCOPE.md` 同步加入一周目 AI 互动说明
-  5. `docs/共享地图状态API.md` 新增 `anomaly_tags`、`player_mark`、`player_mark_day`、`player_reserved_resources` 和诊所求助标记案例
-  6. `docs/祁眠AI决策伪代码.md` 新增 `player_marks`、`reserved_resources`、`anomaly_traces`、`world_trace_input` 和标记加权规则
-- **对其他线的影响**:
-  - **代码线**：后续实现一周目 AI 互动时，优先做诊所最小链路：药柜异常 → 求助标记 → 祁眠夜晚读取 → 匿名药品/档案验证
-  - **比赛材料线**：介绍 AI 玩法时可强调玩家一周目能读懂并间接影响隐藏 AI，不只是结尾反转
-  - **美术线**：后续需要异常档案图标和四类标记图标（危险/求助/路线/物资保留）
-
-### [2026-05-30] 策划包集中整理
-- **改了什么**:
-  1. 新增 `docs/planning_package/` 作为当前统一策划入口
-  2. 新增 `01_策划总纲.md`、`02_策划概要案.md`、`03_系统策划案_GDD.md`、`04_详细策划案.md`
-  3. `README.md`、`marketing/` 主要材料同步到 15 天、14 地点、汽车撤离、Day 15 终局血月口径
-  4. `docs/ONE_PAGE_GDD.md`、`docs/策划案.md`、`docs/DEMO_SCOPE.md` 顶部增加当前维护入口提示
-  5. 修正 `docs/策划案.md` 中最容易误导的旧 14 天/自行车撤离句子
-- **新增/修改的文件**: `docs/planning_package/**`, `README.md`, `marketing/*.md`, `docs/ONE_PAGE_GDD.md`, `docs/策划案.md`, `docs/DEMO_SCOPE.md`, `docs/DECISIONS.md`
-- **对其他线的影响**:
-  - **代码线**：后续开发入口优先读 `docs/planning_package/03_系统策划案_GDD.md` 和 `04_详细策划案.md`
-  - **比赛材料线**：当前材料已同步 15 天/汽车撤离/14 地点口径，可继续从策划包提取答辩内容
-  - **美术线**：无新增素材需求；美术需求集中在 `03_系统策划案_GDD.md` 和 `04_详细策划案.md`
-
-### [2026-05-30] One Page GDD 创建
-- **改了什么**: 新增 `docs/ONE_PAGE_GDD.md`，将现有宣传介绍和长策划内容压缩为开发/答辩用单页 GDD，明确核心循环、玩家系统、15 天结构、撤离条件、祁眠 AI 输入/决策流程、共享地图状态、通关揭示、第二周目 Demo 边界。
-- **影响的机制/数值**: 未新增机制；整理并固定当前表达口径。第二周目明确为比赛 Demo 的关键行动章节，不承诺完整 15 天第二战役。
-- **对其他线的影响**:
-  - **代码线**：可将 `docs/ONE_PAGE_GDD.md` 作为开发入口，长文档作为细节来源。
-  - **比赛材料线**：可用该文件回应“机制循环如何运作、有几个系统”的评审/老师问题。
-  - **美术线**：无新增素材需求。
-
-### [2026-05-27] session summary
-- **改了什么**:
-  1. 天数统一为 15 天：HANDOFF、DEMO_SCOPE、策划案、DEMO_PITCH、DECISIONS 全部更新
-  2. 祁烬 Demo 呈现决策：广播感知 + 不直接出场，移除白昼协议
-  3. 撤离条件重构：自行车限近中圈 → 汽车（修理铺渐进式：发现→攒件→组装→Day15故障弃车徒步）
-  4. 撤离触发：Day 14 广播超大型尸潮 + 据点受损，Day 15 白天出发→凌晨抵达
-  5. 一周目结尾：祁眠日记+片段回放（5 段分镜：醒来/骑行/清桥/留药/血月擦肩）
-  6. 二周目：祁眠成为可操作角色，林行由 AI 接管
-  7. 新增 `docs/15天逐日事件表.md`：15 天细线逐日表（含房间级资源、广播原文、双线叙事、数值倾向）
-  8. 数值平衡表写入策划案：林行 8 项状态初始值、6 类资源产出曲线、设施消耗、丧尸数值、汽车修理子系统、疲劳影响表
-- **影响的机制/数值**: 汽车获取流程（4 步修理）、撤离触发条件、一周目回放结构、疲劳-探索时间曲线
-- **对其他线的影响**:
-  - **代码线**：汽车系统（新机制，4 步修理需新 state/key）、Day 15 弃车徒步事件、一周目片段回放演出系统、二周目祁眠可操作角色切换。15 天逐日事件表可直接对照实现。
-  - **比赛材料线**：撤离触发改为超大型尸潮广播+据点受损，不再使用白昼协议；Demo 明确展示一周目回放+二周目解锁。DEMO_PITCH 已更新为 15 天。
-  - **美术线**：片段回放需要 5 个关键帧/场景（废弃诊所、摩托夜行、桥面侧视、家门口留药、血月擦肩）。祁烬不需要新素材（不直接出场）。汽车需简单像素素材。
-  - **补充(代码开工级交付)**：新增 3 个结构化数据文件——`docs/地点结构化数据.md`（14 地点房间级数据）、`docs/祁眠AI决策伪代码.md`（完整 GDScript 翻译就绪伪代码）、`docs/祁眠事件关卡布局.md`（9 个侧视横版关卡精确布局）、`docs/共享地图状态API.md`（位置状态结构+结算管道+持久化格式）。代码线可直接用这 4 个文件开工。
+- 当前目标是 10-15 分钟 Unity 灰盒纵切，不是完整大体量版本。
+- 近期核心地点：林行家/据点、社区诊所、小区超市、修理铺/车库。
+- 当前 AI 核心链路：诊所异常 → 求助标记 → 祁眠读取 → 匿名药品/浅箭头 → 档案验证 → 结尾日志解释。
+- 完整二周目、14 地点全量、复杂行动点/骰子、长期 NPC 合作和 5 段回放动画均为后续范围。
 
 ---
 
 ## Art Lane
 
-<!-- 美术线每次会话结束后在此追加 -->
+### 当前稳定口径
 
-### [2026-06-02] FHL Image Studio CLI 包只读审计
-- **产出/修改的素材**: 无。本次未生成图片、未运行第三方 exe、未配置或读取 API Key。
-- **新增的素材规格/命名**: 无。确认该包若后续启用，应优先用于概念图、关键帧、宣传图和提示词批量产出；进入 `assets/sprites/` 前仍需按 `ASSET_PIPELINE.md` 做像素化、授权记录和人工筛选。
-- **审计结论**:
-  1. 根目录存在 `FHL-Image-Studio方汤圆CLI魔改版1.0.7.zip`，SHA256 为 `67FCEEB3EC296B5033D5E0395FE22824EAC8CE7E4CA616C06652A636F538FDD9`。
-  2. 包内包含 Go CLI、Image Studio 前端/后端、Cloudflare Worker、Android shell、便携 `runtime/cli/gptcodex-image.exe` 和 `runtime/node/node.exe`。
-  3. `image-cli.cmd` 默认调用 `https://www.fhl.mom`、`gpt-5.5`、`gpt-image-2`，读取 `config/cli.env.local` 或样例配置，输出到包内 `output/` 和 `output/log/`。
-  4. 源码侧看到 base URL 校验、HTTPS 限制、keyring/本地 env 配置逻辑；未做动态运行验证，预编译 exe 仍应视为第三方不可信二进制。
-- **对其他线的影响**:
-  - **美术线**：可作为候选 AI 概念图流水线，但正式参赛素材仍需记录工具、日期、prompt 摘要、人工修改情况和比赛可用状态。
-  - **比赛材料线**：若使用该工具生成展示素材，需在 AI 使用说明和素材授权日志中披露第三方中转/API 工具链。
-  - **代码线**：无影响，未接入 Godot 工程。
-
-### [2026-05-27] 占位素材批量生成 + 美术方向锁定
-- **产出/修改的素材**:
-  - 林行 8 动作占位（idle/walk/search/hurt/bike/gun/jump/climb）32×32
-  - 祁眠 8 动作占位（idle/walk/search/rescue/hidden/gun/jump/climb）32×32
-  - 普通丧尸 3 动作占位（idle/walk/attack）32×32
-  - 血月丧尸 3 动作占位（idle/run/attack）32×32
-  - UI 图标 9 个占位（food/water/medicine/materials/bike_parts/fuel/danger/qimian_trace/blood_moon_warn）16×16
-  - 场景 Tile 6 个占位（shelter/hospital/supermarket/pharmacy/bike_shop/blood_moon_exterior）16×16 + 32×32
-  - 共 38 个占位精灵文件，全部为 Python 生成的纯色块（Prototype Only）
-- **新增的素材规格/命名**:
-  - 按 ASSET_PIPELINE 命名规范：`char_linxing_{action}_32x32.png` 等
-  - 目录结构：`assets/sprites/{characters,enemies,ui,tilesets}/`
-- **对其他线的影响**:
-  - **代码线**：素材路径已就绪，可直接在 Godot 中引用占位精灵
-  - **比赛材料线**：当前所有素材为 Prototype Only，录屏前需替换为正式素材
-  - **设计线**：美术方向已锁定——林行（兵长 Levi 风格）、祁眠（基努里维斯风格）、丧尸（PvZ/MC 卡通化）、大地图（This War of Mine 俯视）、据点（TWoM 横截面侧视图）
-
-### [YYYY-MM-DD] session summary
-- **产出/修改的素材**:
-- **新增的素材规格/命名**:
-- **对其他线的影响**:
+- 美术源文件：`assets/source/`。
+- Unity 可导入导出图：`assets/sprites/`。
+- 角色规格：`32x32`。
+- 基础瓦片：`16x16`。
+- 当前优先素材：
+  - 林行
+  - 祁眠
+  - 普通丧尸 / 血月丧尸
+  - 据点、诊所、超市、修理铺/车库
+  - 资源图标、异常档案图标、求助标记、匿名药包、浅箭头
+- 所有外部或 AI 生成素材必须记录到 `docs/ASSET_LICENSE_LOG.md`。
 
 ---
 
 ## Contest Lane
 
-<!-- 比赛材料线每次会话结束后在此追加 -->
+### 当前稳定口径
 
-### [2026-05-30] 本地介绍文案保存
-- **准备/更新的材料**: 新增/整理根目录 `介绍.md`，作为对外介绍稿，重点说明 15 天生存经营、祁眠 AI 隐藏行动、共享地图改写、通关日志揭示、第二周目祁眠视角与林行 AI 接管。
-- **对齐的 Demo/设计口径**: 采用最新 15 天、Day 7/Day 15 双血月、旧车撤离、祁眠第 5 天醒来、AI 人格卡确定性决策、第二周目祁眠可操作的介绍口径。
-- **对其他线的影响**: 比赛材料线后续可从 `介绍.md` 提取 PPT/视频旁白/报名简介；README 和部分旧营销材料仍有 14 天旧口径，后续需继续同步。
-
-### [2026-05-27] 全材料对齐 Demo 真实状态
-- **准备/更新的材料**: 全面修订 `marketing/` 全部 7 个文件 + `README.md`，对齐 Godot 灰盒 Demo（`game_simulation.gd` + `main.gd`）的当前实现状态
-  - `PPT_OUTLINE.md`：修复关键错误（Slide 5 祁眠苏醒日 Day 11→Day 5）；重构为 10 页幻灯片，每页标注已实现/[planned]；新增已实现系统明细、三层结局说明、开发状态页
-  - `DEMO_PITCH.md`：全面重写为"当前 Demo 实现"结构，列出所有已实现系统（日夜循环、节点地图、室内搜索、五大设施、六大资源、感染系统、撤离条件、血月、三层结局、AI 日志）；明确标注 [planned] future scope
-  - `PITCH_COPY.md`：一句话/短/长三版文案对齐实际资源名（fuel 而非 batteries）、实际结局、实际 AI 机制（共享地图分时段结算、qimian 标记、确定性人格卡规则）
-  - `SUBMISSION_PLAN.md`：Current Demo Truth 扩充为具体已实现功能清单（21 项）；Evidence To Collect 增加室内搜索、设施面板、感染系统截图
-  - `AI_USAGE_STATEMENT.md`：大幅扩展——新增 AI 特性六步说明（人格卡→决策引擎→感知限制→共享地图→异常标记→日志揭示）；新增 CodeBuddy 实际使用表格（规划/代码/测试/文档/比赛材料/跨线同步六大领域）；补充工具链说明和重要声明
-  - `DEMO_VIDEO_SCRIPT.md`：细化分镜（6 个时间段，中文字幕+旁白）；新增录制清单表格（标注每段的 Demo 实现状态）；增加 [effect] 标记区分后期合成内容
-  - `SCREENSHOT_SHOTLIST.md`：重构为表格形式（12 必截 + 8 选截），每项标注对应 Demo 功能和实现状态
-  - `README.md`："当前实现状态"从 4 行扩为 14 项已实现系统列表
-- **对齐的 Demo 实际情况**: 所有文案基于 `game_simulation.gd` 中 `MAX_DEMO_DAY=14`、`_day_events` (1-14)、`_qimian_plan` (5/6/8/11/14)、`_default_locations` (9 节点)、`_default_facilities` (5 设施)、六大资源、感染/撤离/结局系统逐一校验
-- **对其他线的影响**: 无阻塞项。14 vs 15 天不一致需待设计线+代码线协商确认
-
-### [2026-05-27] 比赛线角色定位确立
-- **改了什么**: 用户明确比赛线职责——不是规划任务，而是：①完成度审查（对照官方要求检查是否跑偏）、②合规建议（基于赛事手册给封装/提交建议）、③提交辅助（项目完成时协助封装与提交）
-- **新增/修改的文件**: `HANDOFF.md`（重写比赛线 Purpose 和启动提示词）、`DECISIONS.md`（新增 Contest Lane Role Clarification）
-- **对其他线的影响**: 无。该定位不改变其他线的所有权或工作方式
-  - `DEMO_VIDEO_SCRIPT.md`：细化分镜（6 个时间段，中文字幕+旁白）；新增录制清单表格（标注每段的 Demo 实现状态）；增加 [effect] 标记区分后期合成内容
-  - `SCREENSHOT_SHOTLIST.md`：重构为表格形式（12 必截 + 8 选截），每项标注对应 Demo 功能和实现状态；新增截图规则
-  - `README.md`："当前实现状态"从 4 行扩为 14 项已实现系统列表
-- **对齐的 Demo 实际情况**: 所有文案基于 `game_simulation.gd` 中 `MAX_DEMO_DAY=14`、`_day_events` (1-14)、`_qimian_plan` (5/6/8/11/14)、`_default_locations` (9 节点)、`_default_facilities` (5 设施)、六大资源、感染/撤离/结局系统逐一校验；确认当前 Demo 用 14 天（days 1-14），与设计文档中的 15 天计数存在不一致
-- **对其他线的影响**: 无阻塞项。设计线需注意：比赛材料已统一为 14 天口径（对齐代码实现），CROSS_LANE_LOG 中 15 天统一决议待设计线和代码线协商决定
+- 当前比赛材料只描述 Unity 灰盒真实状态。
+- 可展示内容：
+  - `OneRunMain`
+  - 可走动据点灰盒
+  - 诊所/超市/车库入口
+  - 求助标记
+  - 匿名药品/浅箭头反馈
+  - 未知行动者档案面板
+  - 结尾结构化日志文本
+  - Unity EditMode 回归测试记录
+- 不宣传为已实现：
+  - 正式像素美术
+  - 完整二周目
+  - 完整行动点/骰子
+  - 长期 NPC 合作
+  - 5 段动画回放
+  - 全部地点完整可玩
 
 ---
 
 ## 跨线阻塞/待同步项
 
-<!-- 当某条线的变更需要其他线联动，但尚未完成时，在此记录 -->
-
 | 日期 | 来源线 | 阻塞项 | 需要哪条线响应 | 状态 |
 |------|--------|--------|---------------|------|
-| 2026-05-27 | 总体规划 | 天数不统一(14天/15天混用),需统一为15天 | 设定线、代码线 | ✅ 已解决（双方已完成） |
-| 2026-05-27 | 总体规划 | 祁烬Demo呈现方式未决策(广播/录音/偶遇/不出现) | 设定线 | ✅ 已解决（广播+擦肩） |
-| 2026-05-27 | 总体规划 | 缺少15天逐日事件表,阻塞代码线实现 | 设定线 → 代码线 | ✅ 已解决（15天逐日事件表.md） |
-| 2026-05-27 | 总体规划 | 缺少数值平衡表(资源消耗曲线/丧尸数值) | 设定线 → 代码线 | ✅ 已解决（策划案第7节） |
-| 2026-05-27 | 比赛线 | 比赛材料已按14天口径，需重新对齐15天 | 比赛线 | ⏳待响应 |
-| 2026-05-27 | 设定线 | 汽车系统为新机制(发现/攒件/组装/故障) | 代码线 | ✅ 已解决（第3轮实现） |
-| 2026-05-27 | 设定线 | 一周目回放演出系统(5段分镜动画) | 代码线 | ⏳ 待后续（当前灰盒已有祁眠日志回放，5段分镜动画是Godot场景级工作） |
-| 2026-05-27 | 设定线 | 二周目祁眠可操作角色切换 | 代码线 | ⏳ 待后续（二周目属于完整版scope） |
+| 2026-06-05 | Code | 旧兄弟 Unity 目录仍残留锁定的 `Library/Logs/Temp` | 用户 / Code | 待用户关闭占用该目录的 Unity 后再删除 |
+| 2026-06-05 | Art | 当前画面仍是灰盒，占位素材不适合最终提交 | Art / Contest | 待制作 |

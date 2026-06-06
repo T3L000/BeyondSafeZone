@@ -157,6 +157,149 @@ namespace BeyondSafeZone.Controllers
             return state.LastEvent;
         }
 
+        /// <summary>查询据点行动是否可用及失败原因（只读，不修改 GameState）</summary>
+        public static ShelterActionAvailability CheckActionAvailability(GameState state, string actionId)
+        {
+            // 阶段门控：morning/day 允许（UI 层 EnsureShelterActionPhase 自动转 evening），
+            // searching/night/reveal 阶段不可执行据点行动
+            if (state.Phase == "searching" || state.Phase == "night" || state.Phase == "reveal")
+                return ShelterActionAvailability.Fail(actionId, "现在不是执行据点行动的时机。");
+
+            switch (actionId)
+            {
+                case "build_bed":
+                    if (IsBuilt(state, "bed"))
+                        return ShelterActionAvailability.Fail(actionId, "床已经能用了。");
+                    if (state.Resources.Materials < 2)
+                        return ShelterActionAvailability.Fail(actionId, "建造床需要建材 2，现在材料不够。");
+                    break;
+
+                case "build_workbench":
+                    if (IsBuilt(state, "workbench"))
+                        return ShelterActionAvailability.Fail(actionId, "工作台已经能用了。");
+                    if (state.Resources.Materials < 2 || state.Resources.Parts < 1)
+                        return ShelterActionAvailability.Fail(actionId, "建造工作台需要建材 2、零件 1，现在材料不够。");
+                    break;
+
+                case "build_stove":
+                    if (IsBuilt(state, "stove"))
+                        return ShelterActionAvailability.Fail(actionId, "火炉已经能用了。");
+                    if (state.Resources.Materials < 2 || state.Resources.Parts < 1)
+                        return ShelterActionAvailability.Fail(actionId, "建造火炉需要建材 2、零件 1，现在材料不够。");
+                    break;
+
+                case "rest_bed":
+                    if (!IsBuilt(state, "bed"))
+                        return ShelterActionAvailability.Fail(actionId, "需要先建造床铺。");
+                    break;
+
+                case "workbench_repair":
+                    if (!IsBuilt(state, "workbench"))
+                        return ShelterActionAvailability.Fail(actionId, "需要先建造工作台。");
+                    if (state.Resources.Parts < BalanceData.SHELTER_REPAIR_BIKE_PARTS)
+                        return ShelterActionAvailability.Fail(actionId, "零件不足，无法修理。");
+                    break;
+
+                case "barricade_windows":
+                    if (state.Resources.Materials < BalanceData.SHELTER_BARRICADE_MATERIALS)
+                        return ShelterActionAvailability.Fail(actionId, "建材不足，无法加固。");
+                    break;
+
+                case "radio_broadcast":
+                    if (state.Resources.Fuel < BalanceData.SHELTER_RADIO_FUEL)
+                        return ShelterActionAvailability.Fail(actionId, "燃料不足，无法收听广播。");
+                    break;
+
+                case "organize_storage":
+                    // 始终可用
+                    break;
+
+                case "treat_wound":
+                    if (state.Resources.Meds < BalanceData.SHELTER_TREAT_MEDS)
+                        return ShelterActionAvailability.Fail(actionId, "药品不足，无法处理伤口。");
+                    break;
+
+                case "workbench_car":
+                    if (!IsBuilt(state, "workbench"))
+                        return ShelterActionAvailability.Fail(actionId, "需要先建造工作台。");
+                    if (!state.Car.Found)
+                        return ShelterActionAvailability.Fail(actionId, "还没找到能用的汽车。修理铺后院的车库或许有线索。");
+                    if (state.Car.Ready)
+                        return ShelterActionAvailability.Fail(actionId, "汽车已经修好，可以出发了。");
+                    if (!state.Car.StepEngine)
+                    {
+                        if (state.Resources.Materials < BalanceData.CAR_REPAIR_ENGINE_MATERIALS ||
+                            state.Resources.Parts < BalanceData.CAR_REPAIR_ENGINE_PARTS)
+                            return ShelterActionAvailability.Fail(actionId,
+                                $"引擎线路需要建材×{BalanceData.CAR_REPAIR_ENGINE_MATERIALS}和零件×{BalanceData.CAR_REPAIR_ENGINE_PARTS}，目前材料不够。");
+                    }
+                    else if (!state.Car.StepTire)
+                    {
+                        if (state.CarParts.Tire < BalanceData.CAR_REPAIR_TIRE_COUNT ||
+                            state.Resources.Parts < BalanceData.CAR_REPAIR_TIRE_PARTS)
+                            return ShelterActionAvailability.Fail(actionId,
+                                $"需要轮胎×{BalanceData.CAR_REPAIR_TIRE_COUNT}和零件×{BalanceData.CAR_REPAIR_TIRE_PARTS}来换胎。");
+                    }
+                    else if (!state.Car.StepBattery)
+                    {
+                        if (state.CarParts.Battery < BalanceData.CAR_REPAIR_BATTERY_COUNT ||
+                            state.Resources.Fuel < BalanceData.CAR_REPAIR_BATTERY_FUEL)
+                            return ShelterActionAvailability.Fail(actionId,
+                                $"需要电瓶×{BalanceData.CAR_REPAIR_BATTERY_COUNT}和燃料×{BalanceData.CAR_REPAIR_BATTERY_FUEL}来调试电路。");
+                    }
+                    else if (!state.Car.StepFueled)
+                    {
+                        if (state.CarParts.Gasoline < BalanceData.CAR_REPAIR_GASOLINE_COUNT)
+                            return ShelterActionAvailability.Fail(actionId,
+                                $"需要汽油×{BalanceData.CAR_REPAIR_GASOLINE_COUNT}来加满油箱。");
+                    }
+                    break;
+
+                case "fortify":
+                    if (!IsBuilt(state, "workbench"))
+                        return ShelterActionAvailability.Fail(actionId, "需要先建造工作台。");
+                    if (state.Resources.Materials < BalanceData.SHELTER_FORTIFY_MATERIALS)
+                        return ShelterActionAvailability.Fail(actionId, "建材不足，无法加固。");
+                    break;
+
+                case "quiet":
+                    // 始终可用
+                    break;
+
+                case "mask_scent":
+                    if (state.Resources.Materials < BalanceData.SHELTER_MASK_MATERIALS)
+                        return ShelterActionAvailability.Fail(actionId, "布料和胶带不足，无法遮蔽气味。");
+                    break;
+
+                case "repair_bike":
+                {
+                    var canonical = CheckActionAvailability(state, "workbench_repair");
+                    return new ShelterActionAvailability
+                    {
+                        Available = canonical.Available,
+                        ActionId = actionId,
+                        FailureReason = canonical.FailureReason
+                    };
+                }
+
+                case "radio":
+                {
+                    var canonical = CheckActionAvailability(state, "radio_broadcast");
+                    return new ShelterActionAvailability
+                    {
+                        Available = canonical.Available,
+                        ActionId = actionId,
+                        FailureReason = canonical.FailureReason
+                    };
+                }
+
+                default:
+                    return ShelterActionAvailability.Fail(actionId, "未知行动。");
+            }
+
+            return ShelterActionAvailability.Ok(actionId);
+        }
+
         public static Dictionary<string, FacilityState> DefaultFacilities() => FacilityData.Defaults();
 
         public static void MarkFacilityUsed(GameState state, string facilityId)

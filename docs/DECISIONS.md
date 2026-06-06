@@ -4,6 +4,51 @@ This file records stable decisions for BeyondSafeZone. Add entries only when the
 
 ## 2026-06-04
 
+### Parallel Code Lanes: Split Test Ownership
+
+- Unity test ownership is split so multiple code conversations can work with fewer file conflicts.
+- `Assets/Tests/TestGameSimulation.cs` owns core deterministic rules, `GameSimulation`, `GameState`, day/night resolution, exploration rules, shelter economy rules, and Qimian AI chain tests.
+- `Assets/Tests/TestOneRunUI.cs` owns U-class HUD/UI tests, including dossier panel, Qimian log panel, objective panel, Chinese phase text, and location card UI.
+- `Assets/Tests/TestOneRunWorld.cs` owns shelter/world/runtime tests, including side-view shelter rigging, movement/controller wiring, readability scaffold, facility visuals, and interactable feedback.
+- `Assets/Tests/OneRunTestHelpers.cs` is the shared helper file for UI/world test setup and cleanup.
+- `OneRunGameController.cs` remains unsplit for now; future code should prefer adding small helper methods over expanding already-large core methods.
+- If Unity Test Runner discovery reports moved UI/world tests under old `TestGameSimulation.*` names, first treat it as a stale discovery cache issue and restart Unity or refresh test discovery before changing gameplay code.
+
+### Shelter Action Availability: Read-Only Query Pattern (A-001)
+
+- 据点行动可用性查询采用只读模式：`ShelterController.CheckActionAvailability(GameState, actionId)` 返回 `ShelterActionAvailability` 结构体，不修改 `GameState`。
+- `ShelterActionAvailability` 包含 `Available`（bool）、`ActionId`（string）、`FailureReason`（string）三个字段。可用时 `FailureReason` 为空。
+- 查询逻辑复制 `PerformAction` 中的前置条件（设施建造状态、资源需求、阶段门控），但不执行任何状态变更。
+- UI 层应通过 `GameSimulation.CheckShelterActionAvailability(state, actionId)` 获取可用性和失败原因文本，而非在 UI 层重复规则判断。
+- 此模式为后续 UI 工作提供统一的"为什么不能行动"文本来源。
+
+### Lin Xing Prototype Sprite And Shelter Input Fallback
+
+- `OneRunMain` 的林行运行时贴图从 `Resources.Load<Sprite>("Sprites/Characters/lin_xing_player")` 加载。
+- 当前 Unity 原型贴图路径是 `Assets/Resources/Sprites/Characters/lin_xing_player.png`。
+- 该贴图是单张原型角色图，不是最终 32x32 动画角色表。
+- 公开参赛前必须确认该图的生成工具授权、prompt/模型来源和商业使用条件；在 `docs/ASSET_LICENSE_LOG.md` 中保持 `Needs Review`，直到用户确认。
+- 据点侧视移动必须支持直接按键兜底：`A/D` 和 `←/→` 左右移动。
+- 楼梯切层必须支持直接按键兜底：靠近楼梯时 `W/S` 和 `↑/↓` 上下楼。
+- `W/S` 在据点里不是普通垂直自由移动；只有靠近楼梯触发区时才改变楼层。
+
+### OneRun Shelter Presentation: Side-View Cutaway Home Base
+
+- The near-term `OneRunMain` shelter presentation is a side-view cutaway home base, not a top-down single-room box.
+- Lin Xing moves inside the shelter with side-view horizontal movement and stair-based floor switching.
+- Shelter facilities should be placed as in-world stations inside the cutaway house and show simple state feedback for unbuilt, used, or damaged conditions.
+- Scavenging locations remain top-down greybox search spaces for now; entering scavenging switches back to top-down movement, and returning home switches back to shelter side-view movement.
+- This decision is visual and interaction-scope only. It does not add full `This War of Mine` multi-character scheduling, dice/action points, long NPC cooperation, or final pixel art.
+
+### Unity Project Canonical Path
+
+- The active Unity project is `E:\Download\working\BeyondSafeZone\BeyondSafeZoneUnity`.
+- The sibling folder `E:\Download\working\BeyondSafeZoneUnity` is deprecated and must not be used for future work.
+- Future UnitySkills or manual Unity work should open the in-repository Unity project so code, tests, scenes, and docs stay under one Git workspace.
+- Current-facing docs and contest materials should describe the Unity greybox in `BeyondSafeZoneUnity/`, not the old external sibling project.
+- The old migration-planning file `docs/UNITY_MIGRATION_PLAN.md` is obsolete and removed from the current document set.
+- Current Unity task records, verification notes, and blockers belong in `docs/UNITY_STATUS.md`, not in a migration-status document.
+
 ### Unity Main Scene: OneRunMain Is The Formal First-Run Scene
 
 - `Assets/Scenes/OneRunMain.unity` is the formal Unity scene for the first-run Lin Xing chapter.
@@ -17,7 +62,7 @@ This file records stable decisions for BeyondSafeZone. Add entries only when the
 - Near-term implementation must be driven by structured docs instead of freeform feature discussion.
 - `docs/MINIMUM_DEMO_SCOPE.md` answers whether a feature belongs in the minimum slice.
 - `docs/开发任务拆解.md` is the task entry for selecting exactly one active task number at a time.
-- `docs/UNITY_MIGRATION_STATUS.md` is the required place to record Unity-side verification, blockers, and refinement notes.
+- `docs/UNITY_STATUS.md` is the required place to record Unity-side verification, blockers, and refinement notes.
 - P0 work must follow `Plan -> Build -> Test -> Refine`, with one explicit task number or one explicit interaction chain per work cycle.
 - No P0 feature enters implementation unless its short structured spec is clear: trigger condition, player action, state change, visible feedback, and verification method.
 - A task is complete only when all three are true: docs updated, implementation landed, verification recorded.
@@ -25,13 +70,12 @@ This file records stable decisions for BeyondSafeZone. Add entries only when the
 
 ## 2026-06-02
 
-### Engine Direction: Unity Migration And PlayKit.ai SDK
+### Engine Direction: Unity And PlayKit.ai SDK
 
 - The main development direction is now Unity, not Godot.
-- The Unity project target path is `E:\Download\working\BeyondSafeZoneUnity`.
-- The existing Godot 4.6.2 project remains as a reference implementation for rules, data, text, tests, and greybox behavior.
+- The Unity project target path is `E:\Download\working\BeyondSafeZone\BeyondSafeZoneUnity`.
 - Future planning and implementation language should treat `docs/planning_package/` as the design source, but describe the implementation target as Unity.
-- PlayKit.ai integration should use the Unity SDK. Godot SDK support is not treated as currently available for this project unless the user provides later evidence that it has shipped.
+- PlayKit.ai integration should use the Unity SDK.
 - PlayKit.ai should enhance narrative text: anomaly dossier entries, Qimian log text, NPC/dialogue, broadcast, and monologue variants.
 - PlayKit.ai must not own core deterministic rules: resource math, damage, infection, car repair, blood moon resolution, endings, valid actions, or Qimian's local task selection.
 - Developer Token or other secrets must not be committed, written into source constants, or shipped in a production build.
@@ -51,7 +95,7 @@ This file records stable decisions for BeyondSafeZone. Add entries only when the
 
 - Active entry files stay visible at the repository root or top level of `docs/`.
 - Current design work starts from `docs/planning_package/README.md`.
-- Current Unity migration work starts from `docs/UNITY_MIGRATION_PLAN.md` and `docs/UNITY_MIGRATION_STATUS.md`.
+- Current Unity work starts from `docs/UNITY_STATUS.md`, `docs/MINIMUM_DEMO_SCOPE.md`, and `docs/开发任务拆解.md`.
 - Role/task planning starts from `docs/开发任务拆解.md`.
 - Detail files that still guide implementation live under `docs/reference/`.
 - Old entry points, historical reports, prototypes, and media live under `docs/archive/`.
@@ -192,7 +236,7 @@ This file records stable decisions for BeyondSafeZone. Add entries only when the
 ### Art Lane Boundaries
 
 - Art lane owns `assets/` and `docs/ASSET_PIPELINE.md`.
-- Art lane should not edit `game/scripts/**` unless the change only wires already-agreed asset paths or the user explicitly coordinates with the code lane.
+- Art lane should not edit `BeyondSafeZoneUnity/Assets/Scripts/**` unless the change only wires already-agreed asset paths or the user explicitly coordinates with the code lane.
 - Contest art must be original, AI-generated with commercial-use rights, CC0, or clearly licensed.
 - Minecraft and Plants vs. Zombies assets are private placeholders only and must not be included in public contest submissions.
 
@@ -207,9 +251,9 @@ This file records stable decisions for BeyondSafeZone. Add entries only when the
 
 ### Code Lane Boundary
 
-- Code-lane conversations own Godot implementation files under `game/scripts/**`, `game/tests/**`, and `game/scenes/**`.
+- Code-lane conversations own Unity implementation files under `BeyondSafeZoneUnity/Assets/Scripts/**`, `BeyondSafeZoneUnity/Assets/Tests/**`, and `BeyondSafeZoneUnity/Assets/Scenes/**`.
 - Code-lane work may read design and contest docs for context, but should not alter narrative/design sections unless the user explicitly asks or cross-lane coordination requires it.
-- Before claiming code work is complete, run the Godot simulation test listed in `HANDOFF.md`.
+- Before claiming code work is complete, run the Unity verification listed in `HANDOFF.md` or record why it could not be run.
 
 ### Repository
 
@@ -286,4 +330,4 @@ This file records stable decisions for BeyondSafeZone. Add entries only when the
 
 ### Repository Hygiene
 
-- Do not commit `.superpowers/`, `.godot/`, generated builds, temporary files, or logs.
+- Do not commit `.superpowers/`, Unity generated folders, generated builds, temporary files, or logs.

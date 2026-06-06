@@ -224,6 +224,50 @@ namespace BeyondSafeZone.Controllers
 
         // ---- 私有辅助 ----
 
+        /// <summary>查询搜刮行动是否可用及失败原因（只读，不修改 GameState）</summary>
+        public static ExplorationActionAvailability CheckActionAvailability(GameState state, string actionId, string roomId = "")
+        {
+            // 不在 searching 阶段或未进入任何地点时，所有搜刮行动均不可用
+            bool notSearching = state.Phase != "searching" || string.IsNullOrEmpty(state.Exploration.ActiveLocation);
+            if (notSearching)
+            {
+                if (actionId == "leave_exploration")
+                    return ExplorationActionAvailability.Fail(actionId, "林行还没有进入可离开的地点。");
+                // 离开之外的所有搜刮行动（search/lure）在没有进入地点时统一返回
+                return ExplorationActionAvailability.Fail(actionId, "林行还没有进入可搜索地点。");
+            }
+
+            var location = state.Locations[state.Exploration.ActiveLocation];
+
+            switch (actionId)
+            {
+                case "search_room":
+                case "quick_search":
+                case "careful_search":
+                    if (!location.Rooms.TryGetValue(roomId, out var room))
+                        return ExplorationActionAvailability.Fail(actionId, "这个房间还没有做进灰盒。");
+                    if (room.Searched)
+                        return ExplorationActionAvailability.Fail(actionId, "这个房间已经搜过，再翻只会浪费时间。");
+                    if (room.Locked)
+                        return ExplorationActionAvailability.Fail(actionId, "门锁着。需要撬棍才能打开。");
+                    break;
+
+                case "lure_room":
+                    if (!location.Rooms.TryGetValue(roomId, out _))
+                        return ExplorationActionAvailability.Fail(actionId, "这个房间还没有做进灰盒。");
+                    break;
+
+                case "leave_exploration":
+                    // 离开只需在合法 searching 状态，不检查 roomId
+                    break;
+
+                default:
+                    return ExplorationActionAvailability.Fail(actionId, "未知搜刮行动。");
+            }
+
+            return ExplorationActionAvailability.Ok(actionId);
+        }
+
         private static int SearchTimeForTactic(RoomState room, string tactic) => tactic switch
         {
             "quick" => Math.Max(1, room.SearchTime - 1),

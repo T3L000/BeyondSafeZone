@@ -1,7 +1,3 @@
-# Godot generated
-.godot/
-.superpowers/
-
 # Unity generated
 [Ll]ibrary/
 [Tt]emp/
@@ -27,6 +23,7 @@ Thumbs.db
 # Local tools and secrets
 .local_tools/
 .codebuddy/
+.superpowers/
 FHL-Image-Studio*/
 config/cli.env.local
 config/fhl-api.local.json

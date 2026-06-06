@@ -31,7 +31,7 @@ Important information must be written to disk before the session ends:
 
 ## Lane Ownership
 
-- Code lane owns `game/scripts/**`, `game/tests/**`, and `game/scenes/**`.
+- Code lane owns `BeyondSafeZoneUnity/Assets/Scripts/**`, `BeyondSafeZoneUnity/Assets/Tests/**`, and `BeyondSafeZoneUnity/Assets/Scenes/**`.
 - Design lane owns narrative and scope docs in `docs/`.
 - Art lane owns `assets/` and `docs/ASSET_PIPELINE.md`.
 - Contest lane owns `marketing/`, contest submission copy, AI usage explanation, video scripts, and submission checklists.
@@ -40,4 +40,4 @@ Avoid editing outside the active lane unless the user explicitly asks or the cha
 
 ## Contest Truthfulness
 
-Contest-facing text must match the current demo. Do not claim implemented features unless they exist in the Godot project or are clearly labeled as planned.
+Contest-facing text must match the current Unity demo. Do not claim implemented features unless they exist in `BeyondSafeZoneUnity/` or are clearly labeled as planned.

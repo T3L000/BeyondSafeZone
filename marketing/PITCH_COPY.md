@@ -1,25 +1,27 @@
-﻿# Pitch Copy
+# Pitch Copy
 
-> **对齐版本**: 基于 Godot 灰盒 Demo 实际实现状态。标注 `[planned]` 为计划功能。
+> 对齐版本：当前 Unity 灰盒工程 `BeyondSafeZoneUnity/`。
 
 ## One-Sentence Pitch
 
-`Beyond Safe Zone` is a 2D pixel-art survival management game where the player survives as Lin Xing while an AI-controlled hidden protagonist, Qimian, secretly changes the same shared map.
+`Beyond Safe Zone` is a 2D pixel-art survival management game where an AI-controlled hidden protagonist changes the same shared map the player is trying to survive in.
 
 ## Short Pitch
 
-在《保护区之外》, the player controls Lin Xing, a normal survivor trying to reach the safe zone through daytime exploration and nighttime shelter management. But the world is not static. Qimian, another protagonist controlled by a deterministic AI personality card, wakes on day 5 and acts in the same city outside the player's view. The player first sees only the consequences: missing supplies, shifted zombie groups, anonymous medicine, and strange map traces. At the end of the 15-day demo, Qimian's action log reveals the hidden cause behind those events — and Lin Xing reaches the safe-zone gate only to be placed under quarantine observation.
+《保护区之外》让玩家扮演普通幸存者林行，在城市边缘白天搜刮、夜晚经营据点，并寻找抵达保护区的办法。第 5 天后，另一个主角祁眠醒来。他由本地确定性 AI 规则控制，在玩家看不见的夜晚读取地图痕迹、玩家留下的世界内标记和广播线索，并改变同一张共享地图。
+
+当前 Unity 灰盒已实现诊所 AI 因果链：林行发现异常并留下求助标记，祁眠夜里读取标记，第二天诊所出现匿名药品和浅箭头，未知行动者档案记录结果，结尾日志解释这次选择背后的人格规则和感知输入。
 
 ## Long Pitch
 
-《保护区之外》 is a 2D pixel-art survival management demo built around a visible survival story and a hidden AI-driven story.
+《保护区之外》是一款以“可追溯隐藏因果”为核心的 2D 像素末日生存经营游戏。
 
-The player plays Lin Xing, a normal survivor outside the safe zone. Each day, Lin Xing explores by bicycle across a node-based overworld of 14 locations (near/mid/far rings), gathers food, water, medicine, materials, parts, and fuel, then returns at night to manage five shelter facilities — bed, workbench, window barricade, radio, and storage table. The final evacuation requires finding and repairing an old car. Day 7 brings the first blood moon (tutorial defense), days 11-14 escalate through red-tide nights, and day 15 brings the final blood moon (escape pressure).
+玩家第一周目控制林行。白天，他外出搜刮食物、水、药品、建材、零件和燃料；夜晚，他回到据点修补、休息、处理伤口、听广播，并在越来越恶化的城市里寻找保护区路线和旧车撤离机会。
 
-The innovation is that another protagonist is also alive in the same world. Qimian is infected but conscious, wakes on day 5, and is controlled by a deterministic AI rule engine driven by a personality card. Qimian can move resources, redirect zombies, leave anonymous supplies, and change route danger — all resolved through a shared map with sequential time-slot settlement. The player does not see Qimian's actions directly during the first run, but the consequences are real and traceable: precise medicine thefts at the clinic, emptied supermarket shelves, reduced zombie density near the subway, and `qimian` anomaly icons appearing on the node map.
+但这个世界并不只属于玩家。
 
-When the 15-day demo ends, Lin Xing reaches the safe-zone gate, passes initial infection screening, and is placed under quarantine observation. Qimian's hidden action log is then revealed. Events that seemed random become traceable decisions made by another character. The AI is therefore not a chat window or content generator; it is a hidden protagonist whose rule-driven choices reshape the player's survival experience.
+第 5 天后，祁眠醒来。他已经感染，却仍保持意识。普通丧尸不会主动攻击他，但人类筛查和组织追捕会让他暴露。第一周目中，祁眠不直接站到玩家面前，而是由 AI 在夜里行动。玩家看到的是后果：被动过的药柜、匿名药品、浅箭头、异常档案和通关后才展开的行动日志。
 
-**Current demo endings**: `reached_gate_quarantine` (arrived at gate, quarantined), `barely_reached_gate`, `collapsed`.
+当前 Unity 灰盒聚焦一条最小可玩链路：诊所异常 → 求助标记 → 祁眠读取 → 匿名药品反馈 → 未知行动者档案 → 结尾日志解释。它证明本项目的 AI 不是聊天框，而是一个隐藏主角的行为引擎。
 
-**[planned]** Future scope includes first-run anomaly investigation and indirect marker input, playable Qimian key action chapters, procedurally generated personality cards per run, and AI-inherited Lin Xing behavior in subsequent playthroughs. A complete second 15-day Qimian campaign is full-version scope, not the contest demo promise.
+Future scope includes a fuller first-run survival loop, more locations, clearer shelter management, simplified action-point decisions, richer NPC cooperation, formal pixel art, and selected playable Qimian chapters.

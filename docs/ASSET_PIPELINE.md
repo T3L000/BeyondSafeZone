@@ -23,8 +23,8 @@
 - 格式：PNG，透明背景
 - 视角：2D 侧视图，角色面向左/右，左右行走通过 Sprite 翻转复用
 - 描边：1-2 像素深色描边，所有角色统一
-- 帧间隔：先按 `8-12 FPS` 预览，进入 Godot 后再按手感调整
-- Godot 导入：关闭过滤，使用 nearest-neighbor，避免像素被平滑
+- 帧间隔：先按 `8-12 FPS` 预览，进入 Unity 后再按手感调整
+- Unity 导入：Sprite 模式，Filter Mode 使用 Point，Compression 尽量关闭或保持像素边缘清晰
 - **三位主角均为男性**，Demo 首批只做林行和祁眠
 
 林行设计参考（兵长 Levi Ackerman 风格）：
@@ -128,7 +128,7 @@
 
 - `assets/source/`
 
-导出到 Godot 可直接使用的素材放在：
+导出到 Unity 可直接导入的素材放在：
 
 - `assets/sprites/`
 
@@ -219,7 +219,7 @@ FrameRonin 在本项目中作为像素素材处理和 Sprite Sheet 整理工具�
 5. 导出 Sprite Sheet：按 `32x32` 角色格或 `16x16` 瓦片格导出。
 6. 生成 GIF 预览：确认动作是否清楚、比例是否一致、帧序是否正确。
 7. 放入项目目录：源文件进入 `assets/source/`，游戏用 PNG 进入 `assets/sprites/`。
-8. Godot 导入：关闭过滤，检查像素边缘，必要时添加 import notes。
+8. Unity 导入：Sprite 模式，Point 过滤，检查像素边缘，必要时添加 import notes。
 9. 更新版权记录：补充最终文件路径、修改记录和参赛可用状态。
 
 ## AI 生成素材规则
@@ -251,4 +251,3 @@ not Minecraft, not Plants vs. Zombies.
 - CC-BY 等需要署名的素材必须在参赛说明或素材清单中署名。
 - 素材不得只记录“来自网络”，必须记录具体 URL 或生成工具。
 - 每个进入 `assets/sprites/` 的外部或 AI 生成素材，都要在 `docs/ASSET_LICENSE_LOG.md` 有对应记录。
-

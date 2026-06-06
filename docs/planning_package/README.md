@@ -1,6 +1,6 @@
 # 《保护区之外》策划包
 
-更新日期：2026-06-02
+更新日期：2026-06-05
 
 ## 使用方式
 
@@ -12,10 +12,10 @@
 
 ## 当前实现口径
 
-- 主开发方向已切换为 Unity。
-- 新 Unity 项目目标路径：`E:\Download\working\BeyondSafeZoneUnity`。
-- 现有 Godot 4.6.2 灰盒项目保留为迁移参考，提供规则、数据、文本、测试和行为基准。
-- PlayKit.ai 接入方向为 Unity SDK。Godot SDK 不作为当前可用依据，除非之后有明确发布证据。
+- 主开发方向是 Unity。
+- 当前 Unity 主工程路径：`E:\Download\working\BeyondSafeZone\BeyondSafeZoneUnity`。
+- 旧的兄弟目录 `E:\Download\working\BeyondSafeZoneUnity` 已废弃，不再作为开发目标。
+- PlayKit.ai 接入方向为 Unity SDK。
 - PlayKit.ai 用于异常档案、祁眠日志、NPC/广播/独白等叙事文本增强；资源、伤害、结局、行动合法性和祁眠行动选择仍由本地规则决定。
 
 旧文档不直接删除，作为细节库保留：

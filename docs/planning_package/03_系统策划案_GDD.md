@@ -1,6 +1,6 @@
 # 《保护区之外》系统策划案 / GDD
 
-更新日期：2026-06-02
+更新日期：2026-06-05
 
 ## 封面信息
 
@@ -10,15 +10,15 @@
 | 英文名 | Beyond Safe Zone |
 | 类型 | 2D 像素末日生存经营 |
 | 平台 | PC Demo |
-| 引擎 | Unity（主开发目标）；Godot 4.6.2 灰盒作为迁移参考 |
+| 引擎 | Unity |
 | 版本目标 | 15 天叙事框架下的 10-15 分钟最小可玩 Demo |
 | 核心体验 | 普通幸存者经营求生 + 隐藏 AI 主角改写共享地图 |
 
 ## 当前实现口径
 
-- 主开发方向已从 Godot 切换为 Unity。
-- Unity 项目目标路径为 `E:\Download\working\BeyondSafeZoneUnity`。
-- Godot 现有实现用于迁移参考，不再作为主开发线继续扩展。
+- 主开发方向为 Unity。
+- 当前 Unity 主工程路径为 `E:\Download\working\BeyondSafeZone\BeyondSafeZoneUnity`。
+- 旧的兄弟 Unity 工程目录 `E:\Download\working\BeyondSafeZoneUnity` 已废弃，不再作为开发目标。
 - PlayKit.ai 通过 Unity SDK 接入，定位为叙事文本增强层。
 - 核心游戏规则必须保持本地确定性：资源、状态、伤害、感染、修车、血月、结局、行动合法性和祁眠任务选择不交给在线模型决定。
 - 近期制作范围以 `docs/MINIMUM_DEMO_SCOPE.md` 为准：先做 4 个核心地点和 1 条诊所 AI 因果链，完整 14 地点、二周目和复杂 NPC/骰子系统延后。

@@ -1,66 +1,60 @@
-﻿# AI Usage Statement
+# AI Usage Statement
 
-## AI Feature In The Game
+## Game AI Feature
 
-The main AI design in `Beyond Safe Zone` is Qimian, a hidden protagonist controlled by a deterministic AI decision layer driven by a personality card.
+`Beyond Safe Zone` 的核心 AI 设计是祁眠：一个由本地确定性规则驱动的隐藏主角。
 
-### How It Works
+祁眠不是聊天 NPC，也不是任务发布器。他在林行看不见的夜晚读取同一张共享地图上的可感知痕迹，并改写地点状态。玩家第二天看到的是结果：异常档案、匿名药品、浅箭头、地点状态变化和结尾日志解释。
 
-1. **Personality Card**: At game start, Qimian receives a fixed personality card defining his goals, behavioral tendencies, moral rules, resource habits, and safe-zone attitude. The default demo card: main goal = find Qijin; cautious/avoid exposure; help nearby people without mass rescue; take only needed resources; observe the safe zone but distrust screening.
+## How It Works
 
-2. **Decision Engine**: The personality card compiles into deterministic decision rules — not probability rolls. The same card in the same world state produces the same class of action.
+1. **固定人格卡**
+   当前 Demo 使用固定默认人格：寻找祁烬优先、谨慎避开暴露、会帮助近处的人、只拿任务所需资源、不信任保护区筛查。
 
-3. **Perceptible State Only**: Qimian's AI input is strictly limited to what Qimian can see, hear, or infer from traces. It cannot read Lin Xing's hidden state, other survivors' backend state, or whether Lin Xing explored a location.
+2. **确定性规则**
+   祁眠的行动选择由本地规则排序，不是概率抽卡。相同世界状态和相同人格卡会产生同类行动。
 
-4. **Sequential Shared Map**: Lin Xing's daytime actions modify shared location state → Qimian's nighttime AI reads and further modifies it → next day Lin Xing sees the consequences. This is not full real-time co-presence; it is one set of nodes with sequential time-slot settlement — sufficient for the contest scope.
+3. **可感知输入限制**
+   祁眠只读取他能看见、听见或推断到的信息，例如地点痕迹、玩家留下的世界内标记、广播线索和尸群变化。它不能读取林行后台血量、背包或玩家计划。
 
-5. **Visible Anomalies**: From days 5-6 onward, the player encounters recurring world anomalies (precisely taken supplies, unlocked doors, diverted zombies, anonymous medicine). Affected locations show `qimian` trace icons on the node map, teaching the player that a second actor exists before the final reveal.
+4. **分时段共享地图**
+   林行白天探索并改写地点状态；祁眠夜晚读取可感知痕迹并再次改写；次日林行看到后果。当前实现不是实时双角色同屏，而是一套共享地点状态的顺序结算。
 
-6. **[planned] First-Run Readable AI Interaction**: The design adds anomaly investigation and indirect markers. Lin Xing can record anomalies in an unknown-actor dossier and leave danger/help/route/reserved-supply marks. Qimian can perceive those marks as world traces, but they do not become direct player commands.
+5. **一周目可读互动**
+   当前 Unity 灰盒已实现诊所链路：诊所异常、求助标记、祁眠读取、匿名药品/浅箭头回应、未知行动者档案、结尾日志解释。
 
-7. **Demo-End Reveal**: After the 15-day demo ends (Lin Xing reaches the safe-zone gate and enters quarantine), Qimian's full action log is unlocked. Each entry contains: AI replay (input state, rule filtering, decision path), shared-world impact, and subjective fragment (1-2 lines of Qimian's perspective).
+6. **通关后解释**
+   结尾日志展示人格卡、感知输入、候选行动、排序理由、最终选择和地图影响，让玩家理解“看似随机”的异常来自另一个角色的规则选择。
 
-### Why This Matters
+## Current Unity Greybox Truth
 
-The AI is not a decorative chatbot. It is part of the simulation:
+- 当前主工程：`BeyondSafeZoneUnity/`
+- 当前正式场景：`Assets/Scenes/OneRunMain.unity`
+- 当前可展示重点：
+  - 可走动据点灰盒
+  - 诊所、超市、车库入口
+  - HUD `留下求助`
+  - HUD `档案` 按钮与未知行动者档案面板
+  - 诊所 AI 因果链
+  - Unity EditMode 回归测试覆盖该链路
+- 当前仍属于灰盒阶段：正式像素美术、完整二周目、复杂行动点/骰子和长期 NPC 合作不作为已实现功能宣传。
 
-- It has constrained action choices based on personality rules.
-- It modifies shared world state through a traceable settlement pipeline.
-- It creates mystery during the first run (midgame anomalies consistently appear).
-- It can support first-run player inference and indirect influence through world markers. `[planned]`
-- It becomes explainable through a post-demo log (AI replay + subjective fragments).
-- It supports replay by turning "random events" into traceable hidden intent.
+## Development AI Usage
 
-## AI Tool Usage During Development
+CodeBuddy / Codex 用于辅助：
 
-### CodeBuddy Usage Summary
+| Area | Usage |
+|------|-------|
+| Planning | 整理策划案、One Page、GDD、任务拆解和范围控制 |
+| Implementation | 编写 Unity C# 灰盒逻辑、UI 原型和测试 |
+| Testing | 编写 Unity EditMode 测试并记录验证证据 |
+| Documentation | 维护 `AGENTS.md`、`HANDOFF.md`、`docs/CROSS_LANE_LOG.md`、`docs/PROJECT_MEMORY.md`、`docs/DECISIONS.md` |
+| Contest Materials | 起草并修订介绍、PPT、视频脚本、AI 使用说明 |
 
-Development used CodeBuddy across multiple lanes under the cross-lane-sync coordination protocol:
+Human developer keeps final control over scope, narrative decisions, implementation review, and contest truthfulness.
 
-| Area | What CodeBuddy Did |
-|------|-------------------|
-| **Planning / Design** | Analyzed full project documentation; generated master planning report identifying inconsistencies (day count drift, missing daily event table, Qijin Demo decision); created structured development requirements per lane. |
-| **Code Implementation** | Implemented Godot 4.6.2 GDScript simulation: day/night loop, 15-day event table, node-based overworld (14 locations), indoor search greybox (room cards, search/lure, hidden zombie risk, overstay fatigue), infection/medicine loop (readable stages, dangerous infection pressure, wound treatment), 5 shelter facilities, 6 core resources, car evacuation condition checks, shared map with Qimian trace icons, 3 endings, and full Qimian AI action log with AI replay + subjective fragments. |
-| **Testing** | Wrote and maintained `test_game_simulation.gd` covering all simulation behaviors; ran headless Godot verification after each code slice; all tests currently pass. |
-| **Documentation** | Generated and maintained cross-lane coordination files: `AGENTS.md`, `HANDOFF.md`, `CROSS_LANE_LOG.md`, `DECISIONS.md`, `PROJECT_MEMORY.md`; maintained lane-specific docs under `docs/` and `marketing/`. |
-| **Contest Materials** | Drafted and refined all marketing files: `SUBMISSION_PLAN.md`, `DEMO_PITCH.md`, `PITCH_COPY.md`, `PPT_OUTLINE.md`, `DEMO_VIDEO_SCRIPT.md`, `SCREENSHOT_SHOTLIST.md`, `AI_USAGE_STATEMENT.md`. |
-| **Cross-Lane Sync** | Implemented `cross-lane-sync` skill enforcing startup/shutdown protocols across Code/Design/Art/Contest lanes to prevent inter-lane drift. |
+## Important Notes
 
-### Development Workflow
-
-1. Human defines scope, narrative direction, and design decisions.
-2. CodeBuddy assists with GDScript implementation, test writing, documentation, and contest materials.
-3. Human reviews all AI-assisted output for correctness and alignment with demo truth.
-4. All simulation tests are verified with headless Godot before claiming code completion.
-
-### Tools Used
-
-- **CodeBuddy** (IDE-integrated AI): Primary development assistant for planning, code, tests, docs, and contest materials.
-- **Godot 4.6.2**: Game engine.
-- **FrameRonin** (planned for pixel art production): Video-to-frames, Sprite Sheet organization, GIF previews. Not yet used for production assets.
-
-### Important Notes
-
-- All AI-generated or AI-assisted content was reviewed by the human developer before inclusion.
-- Contest materials strictly align with the current Godot greybox demo state. Planned features are explicitly labeled as `[planned]` or `future scope`.
-- Game AI (Qimian's personality engine) is designed as a deterministic rule system, not a large language model or generative AI.
+- Game AI uses local deterministic rules, not a large language model at runtime.
+- PlayKit.ai is planned as a narrative text enhancement layer only. It must not decide resources, damage, legal actions, endings, or Qimian's local task choice.
+- No API token or secret should be committed to the repository.

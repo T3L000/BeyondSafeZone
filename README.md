@@ -1,54 +1,37 @@
-﻿# BeyondSafeZone
+# BeyondSafeZone
 
-《保护区之外》是一个 2D 像素末日经营游戏项目，当前主开发方向已切换为 Unity，Godot 4 灰盒保留为规则和行为参考。
+《保护区之外》是一个 Unity 2D 像素末日生存经营游戏项目。
 
-## 当前目标
+玩家一周目扮演林行，在 15 天叙事框架内白天外出搜刮、夜晚经营据点，并尝试撤离到保护区。第 5 天后，隐藏主角祁眠由本地确定性 AI 规则驱动，在同一张共享地图里夜间行动。玩家白天留下的痕迹会影响祁眠的任务排序，第二天通过异常档案、匿名药品、路线痕迹等反馈被玩家读到。
 
-- 做出林行线 15 天完整生存周期 Unity 灰盒 Demo
-- 包含第 7 天和第 15 天两次血月
-- 祁眠第 5 天醒来并开始隐藏影响共享地图
-- 让玩家以“撤离到保护区”为表层目标推进经营
-- 在 Demo 结尾解锁祁眠隐藏行动日志，解释一周目中的异常资源和尸群变化
+## Current Focus
 
-## 目录
+- 当前主工程：`BeyondSafeZoneUnity/`
+- 当前正式场景：`BeyondSafeZoneUnity/Assets/Scenes/OneRunMain.unity`
+- 当前目标：先完成 10-15 分钟 Unity 灰盒纵切，而不是完整大体量版本。
+- 当前核心链路：诊所异常 → 玩家留下求助标记 → 祁眠夜间读取 → 匿名药品回应 → 未知行动者档案 → 结尾日志解释。
 
-- `docs/`：当前策划入口、Unity 迁移资料、素材规范、项目记忆
-- `docs/planning_package/`：当前统一策划包入口（总纲、概要案、GDD、详细策划案）
-- `docs/reference/`：仍有实现价值的细节资料（逐日表、地点数据、共享地图 API、祁眠 AI 伪代码等）
-- `docs/archive/`：旧入口、历史报告、原型和媒体归档
-- `game/`：Godot 4 灰盒参考工程
-- `assets/`：源素材和导出的 Sprite Sheet
-- `builds/`：后续导出的可运行版本
-- `marketing/`：参赛文案、视频脚本、截图说明
+## Project Structure
 
-## 运行 Godot 参考灰盒
+- `BeyondSafeZoneUnity/`：当前 Unity 主工程。
+- `docs/`：策划、任务拆解、Unity 状态、项目记忆和决策记录。
+- `docs/planning_package/`：当前统一策划包入口。
+- `docs/reference/`：仍有实现价值的细节资料。
+- `docs/archive/`：历史资料归档，不作为当前实现口径。
+- `assets/`：源素材和导出素材。
+- `marketing/`：参赛文案、视频脚本、截图说明。
+- `builds/`：后续导出的可运行版本。
 
-本机 Godot 控制台命令：
+## Current Implementation
 
-```powershell
-Godot_v4.6.2-stable_mono_win64_console.exe --path game
-```
+- Unity `OneRunMain` 运行时生成可走动据点、HUD、诊所/超市/车库搜刮灰盒。
+- 已有 Day 1 基础循环、Day 5 后祁眠隐藏 AI 链路、诊所求助标记、匿名药品回应、未知行动者档案、结尾因果解释。
+- 已实现 `U-007 未知行动者档案面板`：玩家可点击 HUD `档案` 按钮打开面板。
+- 最新 Unity EditMode 回归：`BeyondSafeZone.Tests.TestGameSimulation` `42/42 passed`，jobId `09d9a3cb`。
 
-运行核心模拟测试：
+## Workflow
 
-```powershell
-Godot_v4.6.2-stable_mono_win64_console.exe --headless --path game --script res://tests/test_game_simulation.gd
-```
-
-## 当前实现状态
-
-- Godot 参考灰盒已有完整 15 天循环，模拟测试曾通过
-- Unity 迁移计划见 `docs/UNITY_MIGRATION_PLAN.md`
-- Unity 迁移状态见 `docs/UNITY_MIGRATION_STATUS.md`
-- 日夜循环（清晨→白天→室内搜索→黄昏→夜晚经营→睡觉结算）
-- 节点式大地图（14 个地点，近/中/远三圈，自行车范围限制，qimian 异常标记）
-- 室内搜索灰盒（房间卡片、谨慎/快速搜索、噪音引尸、隐藏丧尸风险、超时疲劳）
-- 五大据点设施（床铺、工作台、封窗、收音机、储物/整理台）
-- 六大核心资源（食物、水、药品、建材、零件、燃料）
-- 感染系统（可读阶段：低风险/发热风险/危险感染）+ 药品治疗
-- 撤离条件（safezone_confirmed / address_known / car_ready）
-- 汽车撤离系统（发现旧车→引擎→轮胎→电瓶→加油→Day 15 出发后故障徒步）
-- 第 7 天血月（教学防守）+ 第 11-14 天红潮夜 + 第 15 天终局血月
-- 祁眠第 5 天醒来，确定性人格卡控制，隐藏影响共享地图
-- Demo 结尾三层结局 + 祁眠行动日志（AI 回放 + 主观残句）
-- 美术仍是灰盒占位阶段，后续用 FrameRonin 和手工修正统一像素素材
+- 开工先读 `AGENTS.md`、`HANDOFF.md`、`docs/CROSS_LANE_LOG.md`。
+- 单次只推进一个明确任务编号。
+- 没有“触发条件 / 玩家操作 / 状态变化 / 可见反馈 / 验证方法”的短规格，不进入实现。
+- 完成口径必须同时满足：文档已更新、实现已落地、验证已记录。
